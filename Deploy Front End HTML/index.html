@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Picks Game — NFL & College Football</title>
+  <style>
+    :root{ --bg:#0b1020; --card:#121933; --muted:#6772a4; --text:#e8ecff; --accent:#6ea8fe; --good:#8fff9f; }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,Segoe UI,Roboto,Inter,Arial;background:#0b1020;color:var(--text)}
+    .wrap{max-width:1100px;margin:0 auto;padding:20px}
+    header{display:flex;align-items:center;gap:16px;justify-content:space-between;padding:8px 0}
+    .brand{font-weight:800} .sub{color:var(--muted);font-size:12px}
+    .card{background:linear-gradient(180deg,#121933,#0f1731);border:1px solid #1f2a52;border-radius:18px;padding:16px}
+    .controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    button,select,input[type=text],input[type=email]{background:#1a2454;border:1px solid #2a3a7a;color:var(--text);padding:8px 12px;border-radius:10px;font-weight:600;cursor:pointer}
+    input[type=text],input[type=email]{cursor:text}
+    button:hover{filter:brightness(1.08)}
+    .ghost{background:#111a3d}
+    .pill{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:#162052;border:1px solid #28377d;font-size:12px;color:#cfe1ff}
+    .tabs{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+    .tab{padding:8px 12px;border-radius:10px;background:#111a3d;border:1px solid #23306a;cursor:pointer}
+    .tab.active{background:#1b2a64;box-shadow:inset 0 0 0 1px #3d57c7}
+    .games{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+    .game{border:1px solid #22306a;border-radius:14px;padding:12px;background:#0f1734;display:flex;flex-direction:column;gap:10px}
+    .hdr{display:flex;justify-content:space-between;align-items:center;font-weight:700}
+    .meta{color:#a8b3e1;font-size:12px}
+    .markets{display:flex;gap:8px;flex-wrap:wrap}
+    .chip{padding:8px 10px;border-radius:10px;border:1px solid #2b3a7a;background:#141f45;font-size:12px;transition:transform .04s,box-shadow .08s,background .1s,border-color .1s}
+    .chip:active{transform:translateY(1px)}
+    .chip.selected{background:#1f2b63;border-color:#6ea8fe;box-shadow:0 0 0 2px rgba(110,168,254,.35) inset}
+    .pickRow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px}
+    .tag{font-size:11px;padding:4px 8px;border-radius:999px;border:1px solid #30408b;background:#111a3d;color:#cfe1ff}
+    .table{width:100%;border-collapse:collapse}
+    .table th,.table td{padding:8px;border-bottom:1px solid #22306a;text-align:left}
+    .hint{color:var(--muted);font-size:12px}
+    .hr{height:1px;background:#1f2b5c;margin:10px 0}
+    .right{margin-left:auto}
+    .hidden{display:none}
+
+    /* Alerts */
+    .alert{padding:10px 12px;border-radius:10px;border:1px solid transparent;font-weight:700;margin-left:auto}
+    .alert.ok{background:rgba(54,211,153,0.12);border-color:rgba(54,211,153,0.45);color:#b8ffde;box-shadow:0 0 0 2px rgba(54,211,153,0.15) inset}
+    .alert.err{background:rgba(239,68,68,0.14);border-color:rgba(239,68,68,0.55);color:#ffbebe;box-shadow:0 0 0 2px rgba(239,68,68,0.18) inset}
+    .status{margin-left:0}
+
+    /* Mobile-friendly My Picks table */
+    @media (max-width: 640px){
+      #myPicksTable { display:block; border-collapse:separate; border-spacing:0; }
+      #myPicksTable thead { display:none; }
+      #myPicksTable tbody { display:block; }
+      #myPicksTable tr {
+        display:block; background:#0f1734; border:1px solid #22306a; border-radius:12px;
+        padding:10px; margin-bottom:12px;
+      }
+      #myPicksTable td { display:block; width:100%; border-bottom:0; padding:6px 8px; white-space:normal; word-break:break-word; }
+      #myPicksTable td::before{ content: attr(data-label); display:block; font-weight:700; color:#a8b3e1; margin-bottom:2px; }
+      .wrap{ padding:12px; }
+    }
+
+    /* Hall of Fame tiles */
+    .hofGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+    .hofCard{background:#0f1734;border:1px solid #22306a;border-radius:14px;padding:14px;display:flex;flex-direction:column;align-items:center;text-align:center}
+    .hofCard img{width:96px;height:auto;display:block;filter:drop-shadow(0 4px 12px rgba(0,0,0,.35));margin-bottom:10px}
+    .hofCard .caption{font-weight:700;color:#e8ecff}
+    .hofCard .sub{color:#a8b3e1;font-size:13px;margin-top:2px}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <div class="brand">Picks Game</div>
+      <div class="sub">Pick 2 NFL, 2 CFB • 1 Over, 1 Under, 1 Favorite, 1 Underdog • + 1 Moneyline (&gt; -200)</div>
+    </div>
+    <div class="controls">
+      <span id="userBadge" class="pill hidden"></span>
+      <input id="nameInput" type="text" placeholder="Your name"/>
+      <input id="emailInput" type="email" placeholder="you@example.com"/>
+      <button id="btnLogout" class="hidden">Sign out</button>
+    </div>
+  </header>
+
+  <div class="card">
+    <div class="tabs">
+      <div class="tab active" data-tab="picks">Make Picks</div>
+      <div class="tab" data-tab="mine">My Picks</div>
+      <div class="tab" data-tab="board">Scoreboard</div>
+      <div class="tab" data-tab="hof">Hall of Fame</div>
+    </div>
+    <div class="hr"></div>
+
+    <section id="view-picks" class="view">
+      <div class="controls" style="margin-bottom:12px">
+        <button id="btnPrevWeek" class="ghost">← Prev</button>
+        <span id="weekLabel" class="pill">Week: —</span>
+        <button id="btnNextWeek" class="ghost">Next →</button>
+        <button id="btnThisWeek" class="ghost">This Week</button>
+        <span class="right"></span>
+        <select id="sportFilter">
+          <option value="ALL">All games</option>
+          <option value="NFL">NFL</option>
+          <option value="NCAAF">College (FBS)</option>
+        </select>
+        <button class="ghost" id="btnRefresh">Refresh</button>
+      </div>
+
+      <!-- Rules / constraints -->
+      <div class="pickRow" id="rulesBar" style="margin-top:0">
+        <strong>Your required picks:</strong>
+        <span id="ruleNFL" class="tag">NFL: 0/2</span>
+        <span id="ruleCFB" class="tag">CFB: 0/2</span>
+        <span id="ruleOU"  class="tag">O/U: 0 Over / 0 Under</span>
+        <span id="ruleFD"  class="tag">Fav/Dog: 0 Fav / 0 Dog</span>
+        <span id="ruleML"  class="tag">ML: 0/1 (odds &gt; -200)</span>
+        <span class="right alert status" id="ruleMsg">Selections must satisfy all constraints (incl. 1 ML &gt; -200).</span>
+      </div>
+
+      <!-- SUBMIT BUTTON -->
+      <div class="controls" id="submitRow" style="margin:10px 0 10px">
+        <button class="primary" id="btnSubmit" disabled>Submit Picks</button>
+        <span id="submitStatus" class="alert status"></span>
+      </div>
+
+      <!-- PICKS PREVIEW (moved here) -->
+      <div id="picksList" style="margin:0 0 14px"></div>
+
+      <div class="hr"></div>
+
+      <!-- Game cards -->
+      <div id="games" class="games" aria-live="polite"></div>
+
+      <div class="hr"></div>
+    </section>
+
+    <section id="view-mine" class="view hidden">
+      <h3>My Picks</h3>
+      <table class="table" id="myPicksTable">
+        <thead><tr>
+          <th>Week</th><th>Sport</th><th>Matchup</th><th>Market</th>
+          <th>Selection</th><th>Line</th><th>Odds</th><th>Status</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section id="view-board" class="view hidden">
+      <h3>Scoreboard</h3>
+      <table class="table" id="boardTable">
+        <thead><tr>
+          <th>User</th><th>Wins</th><th>Losses</th><th>Pushes</th><th>Total</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section id="view-hof" class="view hidden">
+      <h3>Hall of Fame</h3>
+      <div class="hofGrid">
+        <div class="hofCard">
+          <img src="trophy-gold-transparent-background-19.webp" alt="Trophy">
+          <div class="caption">Year 2022-2023 Champion</div>
+          <div class="sub">Grant</div>
+        </div>
+        <div class="hofCard">
+          <img src="trophy-gold-transparent-background-19.webp" alt="Trophy">
+          <div class="caption">Year 2023-2024 Champion</div>
+          <div class="sub">Clarke</div>
+        </div>
+        <div class="hofCard">
+          <img src="trophy-gold-transparent-background-19.webp" alt="Trophy">
+          <div class="caption">Year 2024-2025 Champion</div>
+          <div class="sub">Ivan</div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<script>
+/* =================== CONFIG =================== */
+const CONFIG = {
+  // Must point to your deployed Google Apps Script Web App URL and end with /exec
+  API: 'enter google apps script deployment id here'
+};
+
+/* =================== DOM HELPERS =================== */
+const el  = s => document.querySelector(s);
+const els = s => Array.from(document.querySelectorAll(s));
+const rid = () => Math.random().toString(36).slice(2,9);
+
+/* =================== DATE HELPERS (Wed–Tue) =================== */
+function startOfWedWeek(d){ const dt=new Date(d); dt.setHours(0,0,0,0); const dow=dt.getDay(); const diff=(dow-3+7)%7; dt.setDate(dt.getDate()-diff); dt.setHours(0,0,0,0); return dt; }
+function addDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
+function fmtShort(d){ return new Date(d).toLocaleDateString(undefined,{ month:'short', day:'numeric', year:'numeric' }); }
+function inRangeLocal(iso,start,end){ if(!iso) return false; const t=new Date(iso); const a=new Date(start); a.setHours(0,0,0,0); const b=new Date(end); b.setHours(23,59,59,999); return t>=a && t<=b; }
+function isoDate(d){ const x=new Date(d); x.setHours(0,0,0,0); return x.toISOString().slice(0,10); }
+
+/* =================== STATE =================== */
+const state = {
+  name:null, email:null,
+  weekStart:startOfWedWeek(new Date()),
+  gamesAll:[], games:[],
+  picks:[] // 5 total: 4 standard + 1 ML
+};
+
+function updateWeekLabel(){ const end=addDays(state.weekStart,6); el('#weekLabel').textContent=`Week: ${fmtShort(state.weekStart)} – ${fmtShort(end)}`; }
+
+/* =================== ROBUST FETCH ODDS =================== */
+async function fetchOdds(){
+  const root = el('#games');
+  root.innerHTML = '<div class="hint">Loading…</div>';
+  try{
+    const startISO = isoDate(state.weekStart);
+
+    const getJSON = async (url) => {
+      const r = await fetch(url);
+      const text = await r.text();
+      console.log('[odds fetch] URL:', url);
+      console.log('[odds fetch] Raw response (first 400):', text.slice(0,400));
+      try { return JSON.parse(text); }
+      catch(e){ throw new Error('Non-JSON response from server. First 200 chars: ' + text.slice(0,200)); }
+    };
+
+    const nfl   = await getJSON(CONFIG.API+'?fn=odds&league=nfl&weekStart='+startISO+'&nocache=1');
+    const ncaaf = await getJSON(CONFIG.API+'?fn=odds&league=ncaaf&weekStart='+startISO+'&nocache=1');
+
+    if (nfl && nfl.ok === false)     throw new Error('NFL odds error: '   + (nfl.error||'unknown'));
+    if (ncaaf && ncaaf.ok === false) throw new Error('NCAAF odds error: ' + (ncaaf.error||'unknown'));
+
+    const g1=((nfl && nfl.games) ? nfl.games : []).map(x=>Object.assign({},x,{league:'NFL'}));
+    const g2=((ncaaf && ncaaf.games) ? ncaaf.games : []).map(x=>Object.assign({},x,{league:'NCAAF'}));
+    state.gamesAll = g1.concat(g2);
+
+    filterByWeek();
+  }catch(e){
+    console.error('Odds fetch failed', e);
+    root.innerHTML = '<div class="hint">Failed to load odds from server: '+ String(e.message||e) +'</div>';
+  }
+}
+
+/* =================== FILTER + RENDER =================== */
+function filterByWeek(){
+  const start=state.weekStart; const end=addDays(start,6); const sport=el('#sportFilter').value;
+  const list=state.gamesAll
+    .filter(g=> (sport==='ALL'||g.league===sport))
+    .filter(g=> inRangeLocal(g.kickoff||g.commence_time,start,end));
+  state.games=list.map(g=>({
+    id:g.id||`${g.league}-${rid()}`,
+    league:g.league,
+    kickoff:g.kickoff||g.commence_time||null,
+    home:g.home_team||g.home||'HOME',
+    away:g.away_team||g.away||'AWAY',
+    spread:g.spread||null,
+    totals:g.totals||null,
+    moneyline:g.moneyline||null
+  }));
+  renderGames(); updateWeekLabel(); updateChipSelection();
+}
+
+function renderGames(){
+  const root=el('#games'); root.innerHTML='';
+  const list=state.games.slice().sort((a,b)=>(a.kickoff||'').localeCompare(b.kickoff||''));
+  for(const g of list){
+    const card=document.createElement('div'); card.className='game';
+    const dt=g.kickoff?new Date(g.kickoff):null; const when=dt?dt.toLocaleString():'TBD';
+    card.innerHTML=`<div class="hdr"><span>${g.away} @ ${g.home}</span><span class="pill">${g.league}</span></div><div class="meta">${when}</div><div class="markets"></div>`;
+    const m=card.querySelector('.markets');
+
+    // SPREAD
+    if (g.spread){
+      const favSide = g.spread.fav; // 'home' | 'away'
+      const favTeam = favSide==='home' ? g.home : g.away;
+      const dogTeam = favSide==='home' ? g.away : g.home;
+      const magRaw  = Number(g.spread.line);
+      const mag     = Number.isFinite(magRaw) ? Math.abs(magRaw) : null;
+      const favLine = mag==null? null : -mag;
+      const dogLine = mag==null? null :  mag;
+      const favPrice= g.spread.favPrice ?? (favSide==='home' ? g.spread.homePrice : g.spread.awayPrice);
+      const dogPrice= g.spread.dogPrice ?? (favSide==='home' ? g.spread.awayPrice : g.spread.homePrice);
+      const fmt = n => (n==null?'':(n>0?`+${n}`:`${n}`));
+
+      m.appendChild(marketChip(g,'spread','favorite',favTeam,{line:favLine,price:favPrice}, `Favorite • ${favTeam} ${fmt(favLine)} (${favPrice??''})`));
+      m.appendChild(marketChip(g,'spread','underdog',dogTeam,{line:dogLine,price:dogPrice}, `Underdog • ${dogTeam} ${fmt(dogLine)} (${dogPrice??''})`));
+    }
+
+    // TOTALS
+    if (g.totals){
+      m.appendChild(marketChip(g,'total','over','Over',{total:g.totals.total,price:g.totals.overPrice},   `Over • ${g.totals.total} (${g.totals.overPrice??''})`));
+      m.appendChild(marketChip(g,'total','under','Under',{total:g.totals.total,price:g.totals.underPrice},`Under • ${g.totals.total} (${g.totals.underPrice??''})`));
+    }
+
+    // MONEYLINE
+    if (g.moneyline){
+      m.appendChild(marketChip(g,'moneyline','ml', g.away,{price:g.moneyline.away}, `ML • ${g.away} (${g.moneyline.away??''})`));
+      m.appendChild(marketChip(g,'moneyline','ml', g.home,{price:g.moneyline.home}, `ML • ${g.home} (${g.moneyline.home??''})`));
+    }
+
+    root.appendChild(card);
+  }
+  if(!list.length){ root.innerHTML='<div class="hint">No games in this Wed–Tue window.</div>'; }
+}
+
+function marketChip(game,market,kind,selection,meta,label){
+  const d=document.createElement('button'); d.className='chip'; d.dataset.key=chipKey(game,market,kind,selection);
+  d.textContent=label; d.addEventListener('click',()=>addPick(game,market,kind,selection,meta)); return d;
+}
+function chipKey(game,market,kind,selection){ return `${game.id}|${market}|${kind}|${selection}`; }
+function updateChipSelection(){
+  const pickKeys=new Set(state.picks.map(p=>`${p.gameId}|${p.market}|${p.kind}|${p.selection}`));
+  els('.chip').forEach(c=> c.classList.toggle('selected', pickKeys.has(c.dataset.key)));
+}
+
+/* =================== PICK MGMT + RULES =================== */
+function renderPicks(){
+  const root=document.getElementById('picksList'); 
+  if(!state.picks.length){ root.innerHTML=''; return; }
+  root.innerHTML = state.picks.map(p=>`
+    <div class="pickList">
+      <div><strong>${p.league}</strong> — ${p.matchup}</div>
+      <div>${p.market.toUpperCase()}</div>
+      <div>${p.kind.toUpperCase()}</div>
+      <div class="hint">${p.odds??''}</div>
+    </div>`).join('');
+}
+
+function validateRules(){
+  const nonML = state.picks.filter(p=>p.market!=='moneyline');
+  const ml    = state.picks.filter(p=>p.market==='moneyline');
+
+  const nfl = nonML.filter(p=>p.league==='NFL').length;
+  const cfb = nonML.filter(p=>p.league==='NCAAF').length;
+  const over  = nonML.filter(p=>p.kind==='over').length;
+  const under = nonML.filter(p=>p.kind==='under').length;
+  const fav   = nonML.filter(p=>p.kind==='favorite').length;
+  const dog   = nonML.filter(p=>p.kind==='underdog').length;
+
+  el('#ruleNFL').textContent = `NFL: ${nfl}/2`;
+  el('#ruleCFB').textContent = `CFB: ${cfb}/2`;
+  el('#ruleOU').textContent  = `O/U: ${over} Over / ${under} Under`;
+  el('#ruleFD').textContent  = `Fav/Dog: ${fav} Fav / ${dog} Dog`;
+
+  let mlOk = (ml.length===1);
+  let mlMsg = 'ML: '+ml.length+'/1 (odds > -200)';
+  if (ml.length===1){
+    const odds = Number(ml[0].odds);
+    mlOk = Number.isFinite(odds) && odds > -200;
+    if(!mlOk) mlMsg += ' — invalid odds';
+  }
+  el('#ruleML').textContent = mlMsg;
+
+  const rulesOK = (nfl===2 && cfb===2 && over===1 && under===1 && fav===1 && dog===1 && mlOk);
+
+  const hasEmail=(el('#emailInput').value||'').trim().length>0;
+  el('#btnSubmit').disabled=!(rulesOK && hasEmail);
+
+  const msg = rulesOK ? 'Ready to submit.' : 'Selections must satisfy all constraints (incl. 1 ML > -200).';
+  const cls = rulesOK ? 'alert ok' : 'alert err';
+  const rm  = el('#ruleMsg'); rm.textContent=msg; rm.className='status '+cls;
+}
+
+function addPick(game,market,kind,selection,meta){
+  const email=(state.email||el('#emailInput').value.trim())||'';
+  const name =(state.name ||el('#nameInput').value.trim())||'';
+  if(email && !state.email){ state.name=name; state.email=email; updateUserBadge(); }
+
+  const pick = {
+    id:rid(),
+    week: isoDate(state.weekStart),
+    email: email||'',
+    user: name||email||'',
+    league:game.league,
+    gameId:game.id,
+    matchup:`${game.away} @ ${game.home}`,
+    market, kind, selection, meta,
+    odds: meta.price ?? null,
+    status:'pending',
+    ts:Date.now()
+  };
+
+  // Toggle logic
+  const key = `${pick.week}|${pick.gameId}|${market}|${kind}|${selection}`;
+  const idx = state.picks.findIndex(p=> `${p.week}|${p.gameId}|${p.market}|${p.kind}|${p.selection}`===key);
+  if (idx>=0){
+    state.picks.splice(idx,1);
+  } else {
+    if (market==='moneyline'){
+      const curML = state.picks.findIndex(p=>p.market==='moneyline');
+      if (curML>=0) state.picks.splice(curML,1);
+    }
+    state.picks.push(pick);
+    if (state.picks.length>5) state.picks.shift();
+  }
+
+  updateChipSelection(); renderPicks(); validateRules();
+}
+
+/* =================== SUBMIT / LOAD / BOARD =================== */
+async function submitPicks(){
+  const name=(el('#nameInput').value||'').trim();
+  const email=(el('#emailInput').value||'').trim();
+  if(!email){ alert('Enter your email at the top first.'); return; }
+
+  const btn=el('#btnSubmit'); btn.disabled = true;
+  const s=el('#submitStatus'); s.textContent='Submitting…'; s.className='status alert';
+
+  try{
+    const res = await fetch(
+      CONFIG.API + '?fn=submit&email=' + encodeURIComponent(email) + '&user=' + encodeURIComponent(name||email),
+      { method:'POST', body: JSON.stringify({ email, user: name||email, picks: state.picks, allowReplace:false }) }
+    );
+    const text = await res.text();
+    let j=null; try{ j=JSON.parse(text); }catch(_){
+      s.textContent='Network/parse error. Response: '+text.slice(0,200); s.className='status alert err';
+      btn.disabled=false; return;
+    }
+    if(j.ok){
+      s.textContent='Picks submitted successfully.'; s.className='status alert ok';
+      state.picks=[]; renderPicks(); validateRules(); loadMyPicks();
+    }else{
+      s.textContent='Error: '+(j.error||'unknown'); s.className='status alert err'; btn.disabled=false;
+    }
+  }catch(e){
+    s.textContent='Fetch failed: '+e.message; s.className='status alert err'; btn.disabled=false;
+  }
+}
+
+async function loadMyPicks(){
+  const email=(el('#emailInput').value||'').trim(); 
+  if(!email) return;
+  const r=await fetch(CONFIG.API+'?fn=mine&email='+encodeURIComponent(email));
+  const j=await r.json();
+  const tbody=el('#myPicksTable tbody'); tbody.innerHTML='';
+  (j.picks||[]).forEach(p=>{
+    let lineVal = (p && p.line !== undefined && p.line !== null && p.line !== '') ? p.line : '—';
+    if ((lineVal === '—' || lineVal === null) && p && p.meta){
+      let meta = p.meta; if (typeof meta === 'string') { try{ meta=JSON.parse(meta); }catch(_){ meta=null; } }
+      if (p.market === 'spread' && meta && meta.line !== undefined)      lineVal = meta.line;
+      else if (p.market === 'total' && meta && meta.total !== undefined) lineVal = meta.total;
+    }
+    if (p.market === 'spread' && lineVal !== '—' && !isNaN(Number(lineVal))){
+      const n=Number(lineVal); lineVal = (n>0?'+':'') + n;
+    }
+    const tr=document.createElement('tr');
+    tr.appendChild(cell(p.week,      'Week'));
+    tr.appendChild(cell(p.league,    'Sport'));
+    tr.appendChild(cell(p.matchup,   'Matchup'));
+    tr.appendChild(cell(p.market,    'Market'));
+    tr.appendChild(cell(p.selection, 'Selection'));
+    tr.appendChild(cell(lineVal,     'Line'));
+    tr.appendChild(cell(p.odds ?? '', 'Odds'));
+    tr.appendChild(cell(p.status,    'Status', { 'data-id': p.id }));
+    tbody.appendChild(tr);
+  });
+  function cell(text,label,attrs={}){ const td=document.createElement('td'); td.textContent=(text==null?'':text); td.setAttribute('data-label',label); Object.entries(attrs).forEach(([k,v])=>td.setAttribute(k,v)); return td; }
+}
+
+async function buildBoard(){
+  const r=await fetch(CONFIG.API+'?fn=board'); const j=await r.json();
+  const tbody=el('#boardTable tbody'); tbody.innerHTML='';
+  (j.rows||[]).forEach(row=>{
+    const tr=document.createElement('tr'); tr.innerHTML=`
+      <td>${row.user}</td><td>${row.wins}</td><td>${row.losses}</td><td>${row.pushes}</td><td>${row.total}</td>
+    `; tbody.appendChild(tr);
+  });
+}
+
+/* =================== USER BADGE + TABS =================== */
+function updateUserBadge(){
+  const n=(el('#nameInput').value||'').trim(), e=(el('#emailInput').value||'').trim();
+  if(e){ el('#userBadge').textContent=n||e; el('#userBadge').classList.remove('hidden'); el('#btnLogout').classList.remove('hidden'); }
+  try{ localStorage.setItem('pg_name', n); localStorage.setItem('pg_email', e); }catch(_){}
+  validateRules();
+}
+function show(tab){
+  els('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===tab));
+  els('.view').forEach(v=> v.id===`view-${tab}`?v.classList.remove('hidden'):v.classList.add('hidden'));
+}
+
+/* =================== INIT =================== */
+document.addEventListener('DOMContentLoaded', ()=>{
+  try{ const sn=localStorage.getItem('pg_name')||''; const se=localStorage.getItem('pg_email')||''; if(sn) el('#nameInput').value=sn; if(se) el('#emailInput').value=se; }catch(_){}
+  updateUserBadge();
+
+  el('#nameInput').addEventListener('input', updateUserBadge);
+  el('#emailInput').addEventListener('input', updateUserBadge);
+  el('#btnLogout').addEventListener('click', ()=>{ state.name=null; state.email=null; try{localStorage.removeItem('pg_name');localStorage.removeItem('pg_email');}catch(_){}});
+
+  els('.tab').forEach(t=> t.addEventListener('click', ()=> {
+    const tab = t.dataset.tab;
+    show(tab);
+    if (tab === 'mine')  loadMyPicks();
+    if (tab === 'board') buildBoard();
+  }));
+
+  el('#btnPrevWeek').addEventListener('click', ()=>{ state.weekStart = addDays(state.weekStart,-7); filterByWeek(); });
+  el('#btnNextWeek').addEventListener('click', ()=>{ state.weekStart = addDays(state.weekStart, 7); filterByWeek(); });
+  el('#btnThisWeek').addEventListener('click', ()=>{ state.weekStart = startOfWedWeek(new Date()); filterByWeek(); });
+
+  el('#sportFilter').addEventListener('change', filterByWeek);
+  el('#btnRefresh').addEventListener('click', fetchOdds);
+  el('#btnSubmit').addEventListener('click', submitPicks);
+
+  updateWeekLabel();
+  fetchOdds();
+  buildBoard();
+  if((el('#emailInput').value||'').trim()) loadMyPicks();
+});
+</script>
+</body>
+</html>
