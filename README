@@ -1,0 +1,5 @@
+There are 2 parts to the code. Front end HTML is manually deployed via Netlify everytime I make a code change. In the HTML file that has to link to the google apps script. 
+You will see a blank CONFIG.API variable in the HTML that you will have to fill in with the deployment ID from your google apps script.
+
+For the .gs file. This is the Google Apps script that I run from https://script.google.com/home. It is missing key variables that I redacted as this is public. You will need
+an ODDS API Key from here: https://the-odds-api.com/ and a google sheets SHEET ID so responses from the form can be saved to google sheets.
