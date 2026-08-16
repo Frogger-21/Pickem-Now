@@ -312,5 +312,49 @@ section("a self-test week can never reach the scoreboard");
   ok(api.getWeeks_().every(w => w.week !== "__selftest__"), "the fake week is not listed");
 }
 
+// ---------------------------------------------------------------- layering
+// The point of the STORAGE section is that nothing outside it knows what a
+// spreadsheet is. That property is invisible at runtime and easy to erode one
+// convenient getDataRange() at a time, so it is asserted on the source text.
+// When the Postgres backend lands, this is what says the swap is complete.
+section("nothing outside the STORAGE section touches Sheets");
+{
+  const lines = SRC.split("\n");
+  const start = lines.findIndex((l) => l.startsWith("// ===== STORAGE"));
+  const end   = lines.findIndex((l) => l.startsWith("// ===== HTTP HANDLERS"));
+  ok(start > 0 && end > start, "the STORAGE section exists and is delimited", `${start}..${end}`);
+
+  // Whole bodies, not just the declaration line. openSheet_ and ensureHeaders_
+  // are the sanctioned door onto Sheets; checkSetup deliberately proves the
+  // spreadsheet opens, and becomes a connection check when Postgres lands.
+  const exempt = new Set();
+  for (const fn of ["openSheet_", "ensureHeaders_", "checkSetup"]) {
+    const at = lines.findIndex((l) => l.startsWith("function " + fn));
+    if (at < 0) continue;
+    for (let i = at; i < lines.length; i++) { exempt.add(i); if (lines[i] === "}") break; }
+  }
+
+  const SHEETS_ONLY = /getDataRange|getRange\(|deleteRow|setValues|insertSheet|SpreadsheetApp|setFrozenRows/;
+  const leaks = [];
+  lines.forEach((l, i) => {
+    if (i >= start && i <= end) return;               // inside the section, fine
+    if (exempt.has(i)) return;
+    if (/^\s*(\/\/|\*|\/\*)/.test(l)) return;         // comments describe, they don't do
+    if (SHEETS_ONLY.test(l)) leaks.push(`${i + 1}: ${l.trim()}`);
+  });
+  ok(leaks.length === 0, "no direct spreadsheet access outside STORAGE", leaks.slice(0, 4).join(" | "));
+
+  // The interface the Postgres implementation has to satisfy, all in one place.
+  for (const fn of ["readPicks_", "setPickStatuses_", "insertPicks_", "deletePickKeys_",
+                    "readResults_", "upsertResults_", "deleteResultIds_", "readUsers_"]) {
+    const at = lines.findIndex((l) => l.startsWith("function " + fn));
+    ok(at >= start && at <= end, fn + " lives in the STORAGE section", at);
+  }
+
+  // _key is opaque: callers may pass it back but must never do arithmetic on it.
+  const outside = lines.slice(0, start).concat(lines.slice(end)).join("\n");
+  ok(!/_key\s*[-+*/]|[-+*/]\s*_key/.test(outside), "no caller does arithmetic on _key");
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

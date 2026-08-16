@@ -50,6 +50,202 @@ function checkSetup() {
   return msg;
 }
 
+// ===== STORAGE ===============================================================
+// Every read and write of pick, result and user data goes through this section
+// and nothing outside it knows what a spreadsheet row is. That is the whole
+// point: swapping Sheets for Postgres means reimplementing the dozen functions
+// below and touching nothing else.
+//
+// Rows are identified by an opaque `_key`. Here it happens to be the sheet row
+// number; on Postgres it will be the primary key. Callers must treat it as
+// meaningless and only ever hand it back.
+
+const PICKS_SHEET   = 'Picks';
+const PICKS_HEADERS = [
+  'id','week','email','user','league','gameId','matchup',
+  'market','kind','selection','odds','meta','status','ts'
+];
+
+const RESULTS_SHEET   = 'Results';
+const RESULTS_HEADERS = [
+  'gameId','league','home_team','away_team','homeScore','awayScore',
+  'completed','commence','lastUpdate','fetchedAt'
+];
+
+const USERS_SHEET = 'Users';
+
+/**
+ * One sheet row as a pick object. `meta` and `odds` are deliberately left
+ * exactly as stored rather than coerced — parseMeta_ already copes with both a
+ * JSON string and a real object, so a Postgres jsonb column will drop straight
+ * in here without the grader noticing.
+ */
+function pickFromRow_(row, H, key) {
+  return {
+    _key:      key,
+    id:        String(row[H.id] || ''),
+    week:      String(row[H.week] || ''),
+    email:     String(row[H.email] || ''),
+    user:      String(row[H.user] || ''),
+    league:    String(row[H.league] || ''),
+    gameId:    String(row[H.gameId] || ''),
+    matchup:   String(row[H.matchup] || ''),
+    market:    String(row[H.market] || ''),
+    kind:      String(row[H.kind] || ''),
+    selection: String(row[H.selection] || ''),
+    odds:      row[H.odds],
+    meta:      row[H.meta],
+    status:    String(row[H.status] || '').toLowerCase(),
+    ts:        row[H.ts]
+  };
+}
+
+/** Every pick, in sheet order. Blank trailing rows come back too; callers
+    filter on what they care about, exactly as they did when they read the
+    grid themselves. */
+function readPicks_() {
+  const sh = openSheet_(PICKS_SHEET);
+  ensureHeaders_(sh, PICKS_HEADERS);
+  const data = sh.getDataRange().getValues();
+  if (data.length < 2) return [];
+  const H = headerIndex_(data[0]);
+  const out = [];
+  for (let i = 1; i < data.length; i++) out.push(pickFromRow_(data[i], H, i + 1));
+  return out;
+}
+
+/**
+ * Apply status changes. updates: [{ _key, status }].
+ *
+ * Written as one setValues over the whole status column rather than a call per
+ * cell — a Sunday with forty pending picks would otherwise be forty round
+ * trips to Sheets, which is slow enough to hit the script time limit.
+ */
+function setPickStatuses_(updates) {
+  if (!updates || !updates.length) return 0;
+  const sh = openSheet_(PICKS_SHEET);
+  const data = sh.getDataRange().getValues();
+  if (data.length < 2) return 0;
+  const H = headerIndex_(data[0]);
+  const col = sh.getRange(2, H.status + 1, data.length - 1, 1).getValues();
+  let n = 0;
+  for (const u of updates) {
+    const ix = u._key - 2;
+    if (ix < 0 || ix >= col.length) continue;
+    col[ix][0] = u.status;
+    n++;
+  }
+  if (n) sh.getRange(2, H.status + 1, col.length, 1).setValues(col);
+  return n;
+}
+
+/** Append picks. Objects in, not rows. */
+function insertPicks_(picks) {
+  if (!picks || !picks.length) return 0;
+  const sh = openSheet_(PICKS_SHEET);
+  ensureHeaders_(sh, PICKS_HEADERS);
+  const rows = picks.map(function (p) {
+    return [
+      p.id, p.week, p.email, p.user, p.league, p.gameId, p.matchup,
+      p.market, p.kind, p.selection, p.odds, p.meta, p.status, p.ts
+    ];
+  });
+  sh.getRange(sh.getLastRow() + 1, 1, rows.length, PICKS_HEADERS.length).setValues(rows);
+  return rows.length;
+}
+
+/** Delete picks by key. Bottom-up, so the earlier row numbers stay valid. */
+function deletePickKeys_(keys) {
+  if (!keys || !keys.length) return 0;
+  const sh = openSheet_(PICKS_SHEET);
+  const sorted = keys.slice().sort(function (a, b) { return b - a; });
+  for (const k of sorted) sh.deleteRow(k);
+  return sorted.length;
+}
+
+/** Cached results keyed by gameId. */
+function readResults_() {
+  const sh = openSheet_(RESULTS_SHEET);
+  ensureHeaders_(sh, RESULTS_HEADERS);
+  const data = sh.getDataRange().getValues();
+  const out = {};
+  if (data.length < 2) return out;
+  const H = headerIndex_(data[0]);
+  for (let i = 1; i < data.length; i++) {
+    const id = String(data[i][H.gameId] || '');
+    if (!id) continue;
+    out[id] = {
+      _key:       i + 1,
+      gameId:     id,
+      league:     String(data[i][H.league] || ''),
+      home_team:  String(data[i][H.home_team] || ''),
+      away_team:  String(data[i][H.away_team] || ''),
+      homeScore:  data[i][H.homeScore],
+      awayScore:  data[i][H.awayScore],
+      completed:  String(data[i][H.completed]).toLowerCase() === 'true'
+    };
+  }
+  return out;
+}
+
+/** Insert or update cached results. */
+function upsertResults_(rows) {
+  if (!rows || !rows.length) return 0;
+  const sh = openSheet_(RESULTS_SHEET);
+  ensureHeaders_(sh, RESULTS_HEADERS);
+  const existing = readResults_();
+  const now = new Date();
+  const appends = [];
+  for (const r of rows) {
+    const values = [
+      r.gameId, r.league, r.home_team, r.away_team,
+      r.homeScore, r.awayScore, r.completed ? 'TRUE' : 'FALSE',
+      r.commence || '', r.lastUpdate || '', now
+    ];
+    const prev = existing[r.gameId];
+    if (prev) sh.getRange(prev._key, 1, 1, RESULTS_HEADERS.length).setValues([values]);
+    else appends.push(values);
+  }
+  if (appends.length) {
+    sh.getRange(sh.getLastRow() + 1, 1, appends.length, RESULTS_HEADERS.length)
+      .setValues(appends);
+  }
+  return rows.length;
+}
+
+/** Delete cached results by gameId. */
+function deleteResultIds_(ids) {
+  if (!ids || !ids.length) return 0;
+  const want = {};
+  for (const id of ids) want[id] = true;
+  const sh = openSheet_(RESULTS_SHEET);
+  const data = sh.getDataRange().getValues();
+  if (data.length < 2) return 0;
+  const H = headerIndex_(data[0]);
+  let n = 0;
+  for (let i = data.length - 1; i >= 1; i--) {
+    if (want[String(data[i][H.gameId] || '')]) { sh.deleteRow(i + 1); n++; }
+  }
+  return n;
+}
+
+/** [{ email, role }]. */
+function readUsers_() {
+  const sh = openSheet_(USERS_SHEET);
+  const data = sh.getDataRange().getValues();
+  if (!data || data.length < 2) return [];
+  const H = headerIndex_(data[0]);
+  if (H.email === undefined || H.role === undefined) return [];
+  const out = [];
+  for (let i = 1; i < data.length; i++) {
+    out.push({
+      email: String(data[i][H.email] || '').trim().toLowerCase(),
+      role:  String(data[i][H.role]  || '').trim().toLowerCase()
+    });
+  }
+  return out;
+}
+
 // ===== HTTP HANDLERS =========================================================
 // GET: odds (league=nfl|ncaaf[,nocache=1]), mine (email), board, isAdmin (email)
 function doGet(e) {
@@ -170,19 +366,9 @@ function ensureHeaders_(sh, headers) {
 
 function isAdminEmail_(email) {
   if (!email) return false;
-  const sh = openSheet_('Users');
-  const data = sh.getDataRange().getValues();
-  if (!data || data.length < 2) return false;
-  const headers = data[0];
-  const idxEmail = headers.indexOf('email');
-  const idxRole  = headers.indexOf('role');
-  if (idxEmail < 0 || idxRole < 0) return false;
   const needle = String(email).trim().toLowerCase();
-  for (let i = 1; i < data.length; i++) {
-    const rowEmail = String(data[i][idxEmail] || '').trim().toLowerCase();
-    if (rowEmail === needle) {
-      return String(data[i][idxRole] || '').trim().toLowerCase() === 'admin';
-    }
+  for (const u of readUsers_()) {
+    if (u.email === needle) return u.role === 'admin';
   }
   return false;
 }
@@ -391,66 +577,10 @@ function getOdds_(league, weekStart, opts) {
 //      is actually pending, and every completed game is cached in Results so
 //      it's never fetched twice.
 
-const RESULTS_SHEET   = 'Results';
-const RESULTS_HEADERS = [
-  'gameId','league','home_team','away_team','homeScore','awayScore',
-  'completed','commence','lastUpdate','fetchedAt'
-];
-
 function leagueToSport_(league) {
   return String(league).toUpperCase() === 'NFL'
     ? 'americanfootball_nfl'
     : 'americanfootball_ncaaf';
-}
-
-/** Cached results keyed by gameId. */
-function readResults_() {
-  const sh = openSheet_(RESULTS_SHEET);
-  ensureHeaders_(sh, RESULTS_HEADERS);
-  const data = sh.getDataRange().getValues();
-  const out = {};
-  if (data.length < 2) return out;
-  const H = headerIndex_(data[0]);
-  for (let i = 1; i < data.length; i++) {
-    const id = String(data[i][H.gameId] || '');
-    if (!id) continue;
-    out[id] = {
-      row:        i + 1,
-      gameId:     id,
-      league:     String(data[i][H.league] || ''),
-      home_team:  String(data[i][H.home_team] || ''),
-      away_team:  String(data[i][H.away_team] || ''),
-      homeScore:  data[i][H.homeScore],
-      awayScore:  data[i][H.awayScore],
-      completed:  String(data[i][H.completed]).toLowerCase() === 'true'
-    };
-  }
-  return out;
-}
-
-/** Insert or update cached results. */
-function upsertResults_(rows) {
-  if (!rows || !rows.length) return 0;
-  const sh = openSheet_(RESULTS_SHEET);
-  ensureHeaders_(sh, RESULTS_HEADERS);
-  const existing = readResults_();
-  const now = new Date();
-  const appends = [];
-  for (const r of rows) {
-    const values = [
-      r.gameId, r.league, r.home_team, r.away_team,
-      r.homeScore, r.awayScore, r.completed ? 'TRUE' : 'FALSE',
-      r.commence || '', r.lastUpdate || '', now
-    ];
-    const prev = existing[r.gameId];
-    if (prev) sh.getRange(prev.row, 1, 1, RESULTS_HEADERS.length).setValues([values]);
-    else appends.push(values);
-  }
-  if (appends.length) {
-    sh.getRange(sh.getLastRow() + 1, 1, appends.length, RESULTS_HEADERS.length)
-      .setValues(appends);
-  }
-  return rows.length;
 }
 
 /** One /scores call. Costs 2 credits. eventIds narrows it to games we need. */
@@ -558,29 +688,13 @@ function autoGrade() {
  */
 function runAutoGrade_(opts) {
   const noFetch = !!(opts && opts.noFetch);
-  const sh = openSheet_(PICKS_SHEET);
-  const data = sh.getDataRange().getValues();
-  if (data.length < 2) return { graded: 0, stillPending: 0, creditsUsed: 0, note: 'no picks yet' };
+  const all = readPicks_();
+  if (!all.length) return { graded: 0, stillPending: 0, creditsUsed: 0, note: 'no picks yet' };
 
-  const H = headerIndex_(data[0]);
-  const statusCol = H.status + 1;
-
-  const pending = [];
-  for (let i = 1; i < data.length; i++) {
-    const status = String(data[i][H.status] || '').toLowerCase();
-    if (status && status !== 'pending') continue;      // already decided
-    const gameId = String(data[i][H.gameId] || '');
-    if (!gameId) continue;                              // nothing to join on
-    pending.push({
-      row: i + 1,
-      gameId,
-      league:    String(data[i][H.league] || ''),
-      market:    data[i][H.market],
-      kind:      data[i][H.kind],
-      selection: data[i][H.selection],
-      meta:      data[i][H.meta]
-    });
-  }
+  const pending = all.filter(function (p) {
+    if (p.status && p.status !== 'pending') return false;   // already decided
+    return !!p.gameId;                                      // nothing to join on
+  });
   if (!pending.length) {
     return { graded: 0, stillPending: 0, creditsUsed: 0, note: 'nothing pending — no API call made' };
   }
@@ -611,15 +725,14 @@ function runAutoGrade_(opts) {
     }
   }
 
-  // Write the whole status column back in one call rather than cell by cell.
-  const statusValues = sh.getRange(2, statusCol, data.length - 1, 1).getValues();
-  let graded = 0, stillPending = 0;
+  const updates = [];
+  let stillPending = 0;
   for (const p of pending) {
     const verdict = gradePickAgainstResult_(p, cache[p.gameId]);
-    if (verdict) { statusValues[p.row - 2][0] = verdict; graded++; }
+    if (verdict) updates.push({ _key: p._key, status: verdict });
     else stillPending++;
   }
-  if (graded) sh.getRange(2, statusCol, statusValues.length, 1).setValues(statusValues);
+  const graded = setPickStatuses_(updates);
 
   const out = { graded, stillPending, creditsUsed };
   if (fetchErrors.length) out.errors = fetchErrors;
@@ -644,12 +757,7 @@ function removeAutoGradeTriggers() {
   return 'removed ' + n + ' trigger(s)';
 }
 
-// ===== PICKS (Sheets) ========================================================
-const PICKS_SHEET   = 'Picks';
-const PICKS_HEADERS = [
-  'id','week','email','user','league','gameId','matchup',
-  'market','kind','selection','odds','meta','status','ts'
-];
+// ===== PICKS =================================================================
 
 /**
  * Replace this user's picks for the week, then append the new set.
@@ -662,33 +770,28 @@ const PICKS_HEADERS = [
 function submitPicks_(email, user, picks) {
   if (!email) throw new Error('email required');
 
-  const sh = openSheet_(PICKS_SHEET);
-  ensureHeaders_(sh, PICKS_HEADERS);
-
   const week = String((picks && picks[0] && picks[0].week) || '');
-  const replaced = week ? clearExistingPicks_(sh, email, week) : 0;
+  const replaced = week ? clearExistingPicks_(email, week) : 0;
 
-  const rows = picks.map(p => ([
-    p.id || Utilities.getUuid(),
-    p.week || '',
-    email,
-    user || email,
-    p.league || '',
-    p.gameId || '',
-    p.matchup || '',
-    p.market || '',
-    p.kind || '',
-    p.selection || '',
-    p.odds ?? '',
-    JSON.stringify(p.meta || {}),
-    (p.status || 'pending'),
-    new Date(p.ts || Date.now())
-  ]));
+  const rows = (picks || []).map(p => ({
+    id:        p.id || Utilities.getUuid(),
+    week:      p.week || '',
+    email:     email,
+    user:      user || email,
+    league:    p.league || '',
+    gameId:    p.gameId || '',
+    matchup:   p.matchup || '',
+    market:    p.market || '',
+    kind:      p.kind || '',
+    selection: p.selection || '',
+    odds:      p.odds ?? '',
+    meta:      JSON.stringify(p.meta || {}),
+    status:    p.status || 'pending',
+    ts:        new Date(p.ts || Date.now())
+  }));
 
   if (!rows.length) return { count: 0, replaced };
-
-  const startRow = sh.getLastRow() + 1; // always >= 2 after headers
-  sh.getRange(startRow, 1, rows.length, PICKS_HEADERS.length).setValues(rows);
+  insertPicks_(rows);
   return { count: rows.length, replaced };
 }
 
@@ -697,58 +800,42 @@ function submitPicks_(email, user, picks) {
  * already been graded, which is what stops a resubmission from erasing a
  * result. Deletes bottom-up so earlier row numbers stay valid.
  */
-function clearExistingPicks_(sh, email, week) {
-  const data = sh.getDataRange().getValues();
-  if (data.length < 2) return 0;
-  const H = headerIndex_(data[0]);
+function clearExistingPicks_(email, week) {
   const needle = String(email).trim().toLowerCase();
-
   const victims = [];
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][H.email] || '').trim().toLowerCase() !== needle) continue;
-    if (String(data[i][H.week] || '') !== week) continue;
-    const status = String(data[i][H.status] || '').toLowerCase();
-    if (status && status !== 'pending') {
+  for (const p of readPicks_()) {
+    if (p.email.trim().toLowerCase() !== needle) continue;
+    if (p.week !== week) continue;
+    if (p.status && p.status !== 'pending') {
       throw new Error('Week ' + week + ' has already been graded — picks are locked.');
     }
-    victims.push(i + 1);
+    victims.push(p._key);
   }
-  for (let k = victims.length - 1; k >= 0; k--) sh.deleteRow(victims[k]);
-  return victims.length;
+  return deletePickKeys_(victims);
 }
 
 // Read picks for an email (used by "My Picks" UI)
 function getMyPicks_(email) {
   if (!email) throw new Error('email required');
-  const sh = openSheet_('Picks');
-  const data = sh.getDataRange().getValues();
-  if (data.length < 2) return [];
-  const headers = data[0];
-  const idxEmail = headers.indexOf('email');
+  const needle = String(email).trim().toLowerCase();
   const picks = [];
-  for (let i = 1; i < data.length; i++) {
-    const row = data[i];
-    if (String(row[idxEmail] || '').trim().toLowerCase() === String(email).trim().toLowerCase()) {
-      const obj = {};
-      headers.forEach((h, ix) => obj[h] = row[ix]);
 
-      // Parse meta if it’s a JSON string
-      let meta = obj.meta;
-      if (typeof meta === 'string') {
-        try { meta = JSON.parse(meta); } catch(_) { meta = null; }
-      }
-      // Compute line for display convenience
-      let line = '';
-      if (obj.market === 'spread' && meta && meta.line !== undefined) {
-        line = meta.line;
-      } else if (obj.market === 'total' && meta && meta.total !== undefined) {
-        line = meta.total;
-      }
-      obj.line = line;
+  for (const p of readPicks_()) {
+    if (p.email.trim().toLowerCase() !== needle) continue;
+    const meta = parseMeta_(p.meta);
 
-      obj.id = obj.id || ('row_' + (i + 1));
-      picks.push(obj);
-    }
+    // The UI shows one number per pick, whichever the market makes relevant.
+    let line = '';
+    if (p.market === 'spread' && meta && meta.line  !== undefined) line = meta.line;
+    else if (p.market === 'total' && meta && meta.total !== undefined) line = meta.total;
+
+    picks.push({
+      id: p.id || ('row_' + p._key),
+      week: p.week, email: p.email, user: p.user, league: p.league,
+      gameId: p.gameId, matchup: p.matchup, market: p.market, kind: p.kind,
+      selection: p.selection, odds: p.odds, meta: p.meta,
+      status: p.status, ts: p.ts, line: line
+    });
   }
   picks.sort((a, b) => (b.ts || 0) - (a.ts || 0));
   return picks;
@@ -759,23 +846,17 @@ function getMyPicks_(email) {
 // (weekly winners, the season table, a single week's detail) reads off that.
 
 function tallies_() {
-  const sh = openSheet_(PICKS_SHEET);
-  const data = sh.getDataRange().getValues();
-  if (data.length < 2) return { weeks: {}, users: {} };
-
-  const H = headerIndex_(data[0]);
   const weeks = {};   // week -> { user -> {wins,losses,pushes,pending,total} }
   const users = {};   // user -> season totals
 
-  for (let i = 1; i < data.length; i++) {
-    const row = data[i];
-    const user = String(row[H.user] || '').trim();
+  for (const p of readPicks_()) {
+    const user = p.user.trim();
     if (!user) continue;
-    const week   = String(row[H.week] || '');
+    const week = p.week;
     // Belt and braces: runSelfTest deletes its own rows, but if it ever dies
     // mid-run (script timeout, say) its fake week must not reach the board.
     if (week === SELFTEST_WEEK) continue;
-    const status = String(row[H.status] || '').toLowerCase();
+    const status = p.status;
 
     if (!users[user]) users[user] = { wins:0, losses:0, pushes:0, pending:0, total:0, weeksPlayed:{} };
     if (week) users[user].weeksPlayed[week] = true;
@@ -873,14 +954,9 @@ function getWeek_(week) {
 function gradePick_(email, id, result) {
   if (!isAdminEmail_(email)) throw new Error('admin only');
   if (!id) throw new Error('id required');
-  const sh = openSheet_(PICKS_SHEET);
-  const data = sh.getDataRange().getValues();
-  const headers = data[0];
-  const idxId     = headers.indexOf('id');
-  const idxStatus = headers.indexOf('status');
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][idxId]) === String(id)) {
-      sh.getRange(i + 1, idxStatus + 1).setValue(String(result || '').toLowerCase());
+  for (const p of readPicks_()) {
+    if (p.id === String(id)) {
+      setPickStatuses_([{ _key: p._key, status: String(result || '').toLowerCase() }]);
       return { id, result };
     }
   }
@@ -962,28 +1038,15 @@ function selfTestPicks_() {
 
 /** Remove every trace of a previous run. Returns how many rows went. */
 function selfTestCleanup_() {
-  let removed = 0;
+  const victims = readPicks_()
+    .filter(function (p) { return p.week === SELFTEST_WEEK; })
+    .map(function (p) { return p._key; });
 
-  const picks = openSheet_(PICKS_SHEET);
-  ensureHeaders_(picks, PICKS_HEADERS);
-  const pd = picks.getDataRange().getValues();
-  if (pd.length > 1) {
-    const H = headerIndex_(pd[0]);
-    for (let i = pd.length - 1; i >= 1; i--) {        // bottom-up: row numbers stay valid
-      if (String(pd[i][H.week] || '') === SELFTEST_WEEK) { picks.deleteRow(i + 1); removed++; }
-    }
-  }
+  const cache = readResults_();
+  const junk = Object.keys(cache)
+    .filter(function (id) { return id.indexOf(SELFTEST_PREFIX) === 0; });
 
-  const results = openSheet_(RESULTS_SHEET);
-  ensureHeaders_(results, RESULTS_HEADERS);
-  const rd = results.getDataRange().getValues();
-  if (rd.length > 1) {
-    const H = headerIndex_(rd[0]);
-    for (let i = rd.length - 1; i >= 1; i--) {
-      if (String(rd[i][H.gameId] || '').indexOf(SELFTEST_PREFIX) === 0) { results.deleteRow(i + 1); removed++; }
-    }
-  }
-  return removed;
+  return deletePickKeys_(victims) + deleteResultIds_(junk);
 }
 
 /**
@@ -1000,27 +1063,22 @@ function runSelfTest() {
     const fixtures = selfTestPicks_();
     upsertResults_(selfTestResults_());
 
-    const sh = openSheet_(PICKS_SHEET);
-    ensureHeaders_(sh, PICKS_HEADERS);
-    const rows = fixtures.map(function (p, i) {
-      return [
-        SELFTEST_PREFIX + i, SELFTEST_WEEK, SELFTEST_EMAIL, 'Selftest',
-        'NFL', p.gameId, 'selftest', p.market, p.kind, p.selection,
-        '', JSON.stringify(p.meta), 'pending', new Date()
-      ];
-    });
-    sh.getRange(sh.getLastRow() + 1, 1, rows.length, PICKS_HEADERS.length).setValues(rows);
+    insertPicks_(fixtures.map(function (p, i) {
+      return {
+        id: SELFTEST_PREFIX + i, week: SELFTEST_WEEK, email: SELFTEST_EMAIL,
+        user: 'Selftest', league: 'NFL', gameId: p.gameId, matchup: 'selftest',
+        market: p.market, kind: p.kind, selection: p.selection,
+        odds: '', meta: JSON.stringify(p.meta), status: 'pending', ts: new Date()
+      };
+    }));
 
     // The real thing - the same function the six-hourly trigger calls.
     const run = runAutoGrade_({ noFetch: true });
 
     // Read back what it actually wrote.
-    const after = sh.getDataRange().getValues();
-    const H = headerIndex_(after[0]);
     const got = {};
-    for (let i = 1; i < after.length; i++) {
-      if (String(after[i][H.week] || '') !== SELFTEST_WEEK) continue;
-      got[String(after[i][H.id])] = String(after[i][H.status] || '').toLowerCase();
+    for (const p of readPicks_()) {
+      if (p.week === SELFTEST_WEEK) got[p.id] = p.status;
     }
 
     const failures = [];
@@ -1109,29 +1167,16 @@ function splitMatchup_(matchup) {
 
 /** Every pick in one week, with meta already parsed. */
 function readWeekPicks_(week) {
-  const sh = openSheet_(PICKS_SHEET);
-  const data = sh.getDataRange().getValues();
-  if (data.length < 2) return [];
-  const H = headerIndex_(data[0]);
   const want = String(week);
-  const out = [];
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][H.week] || '') !== want) continue;
-    out.push({
-      row:       i + 1,
-      id:        String(data[i][H.id] || ''),
-      user:      String(data[i][H.user] || ''),
-      league:    String(data[i][H.league] || ''),
-      gameId:    String(data[i][H.gameId] || ''),
-      matchup:   String(data[i][H.matchup] || ''),
-      market:    String(data[i][H.market] || ''),
-      kind:      String(data[i][H.kind] || ''),
-      selection: String(data[i][H.selection] || ''),
-      meta:      parseMeta_(data[i][H.meta]),
-      status:    String(data[i][H.status] || '').toLowerCase()
+  return readPicks_()
+    .filter(function (p) { return p.week === want; })
+    .map(function (p) {
+      const o = {};
+      for (const k of Object.keys(p)) o[k] = p[k];
+      o.row  = p._key;              // what to look at if something is wrong
+      o.meta = parseMeta_(p.meta);
+      return o;
     });
-  }
-  return out;
 }
 
 /**
@@ -1253,35 +1298,28 @@ function lineNote_(p) {
  * of thing hand-grading produces and nobody notices until the season is over.
  */
 function auditGrades() {
-  const sh = openSheet_(PICKS_SHEET);
-  const data = sh.getDataRange().getValues();
-  if (data.length < 2) return 'No picks yet.';
-  const H = headerIndex_(data[0]);
+  const all = readPicks_();
+  if (!all.length) return 'No picks yet.';
 
   const byGame = {};
   let decided = 0;
-  for (let i = 1; i < data.length; i++) {
-    const week = String(data[i][H.week] || '');
-    if (week === SELFTEST_WEEK) continue;
-    const status = String(data[i][H.status] || '').toLowerCase();
-    if (status !== 'win' && status !== 'loss' && status !== 'push') continue;
-    const gameId = String(data[i][H.gameId] || '');
-    if (!gameId) continue;
+  for (const raw of all) {
+    if (raw.week === SELFTEST_WEEK) continue;
+    if (raw.status !== 'win' && raw.status !== 'loss' && raw.status !== 'push') continue;
+    if (!raw.gameId) continue;
 
-    const sides = splitMatchup_(String(data[i][H.matchup] || ''));
+    const sides = splitMatchup_(raw.matchup);
     decided++;
     const p = {
-      row: i + 1, week: week,
-      user: String(data[i][H.user] || ''),
-      matchup: String(data[i][H.matchup] || ''),
-      market: String(data[i][H.market] || '').toLowerCase(),
-      kind: String(data[i][H.kind] || '').toLowerCase(),
-      selection: String(data[i][H.selection] || ''),
-      meta: parseMeta_(data[i][H.meta]) || {},
-      status: status,
-      side: sides ? sideOf_(String(data[i][H.selection] || ''), sides.home, sides.away) : null
+      row: raw._key, week: raw.week, user: raw.user, matchup: raw.matchup,
+      market: raw.market.toLowerCase(),
+      kind: raw.kind.toLowerCase(),
+      selection: raw.selection,
+      meta: parseMeta_(raw.meta) || {},
+      status: raw.status,
+      side: sides ? sideOf_(raw.selection, sides.home, sides.away) : null
     };
-    (byGame[gameId] = byGame[gameId] || []).push(p);
+    (byGame[raw.gameId] = byGame[raw.gameId] || []).push(p);
   }
 
   const problems = [];

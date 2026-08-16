@@ -186,7 +186,7 @@ the feed — preseason counts — you can put a throwaway pick on one and watch
 `autoGrade()` grade it for real, network and all. `checkOddsApi()` shows what's
 currently there.
 
-## Sheets
+## Storage
 
 | Sheet | Contents |
 |---|---|
@@ -195,6 +195,51 @@ currently there.
 | `Users` | `email` + `role`; role `admin` unlocks manual grading |
 
 All three are created automatically on first use.
+
+Every read and write goes through the **`STORAGE`** section of the script, and
+nothing outside it knows what a spreadsheet row is:
+
+```
+readPicks_()           setPickStatuses_(updates)   insertPicks_(picks)
+deletePickKeys_(keys)  readResults_()              upsertResults_(rows)
+deleteResultIds_(ids)  readUsers_()
+```
+
+Rows carry an opaque `_key`. It happens to be the sheet row number today and
+will be a primary key on Postgres; callers may hand it back but must never do
+arithmetic on it. `pipeline-test.js` asserts all of this against the source
+text, because the property is invisible at runtime and would otherwise erode
+one convenient `getDataRange()` at a time.
+
+## Moving to Postgres
+
+`db/schema.sql` is the target schema — paste it into the Supabase SQL editor
+and run it. It's idempotent.
+
+Two decisions in it worth knowing. `meta` stays `jsonb` rather than being
+flattened into columns, because the grader reads it as a blob and flattening
+would mean rewriting the one function you least want to touch; the numbers
+inside are still queryable because `line` and `total` are **generated columns**
+extracted from the json and stored as real numerics. And scores are nullable
+`int`, because null means "not known" — the distinction the whole grader hangs
+on.
+
+The schema also ships the views that are the actual reason to move:
+
+| View | Answers |
+|---|---|
+| `season_table` | the scoreboard, plus units won |
+| `record_by_side` | are you better on dogs or on chalk |
+| `record_by_market` | is the moneyline pick helping or is it a tax |
+| `record_by_league` | NFL vs NCAAF |
+| `picks_with_results` | every pick with line, result and final margin — **join your EPA and SP+ tables onto this one** |
+
+`unit_pnl(status, odds)` turns American odds into profit on one unit, so ROI is
+a `sum()`. Unpriced picks are treated as −110.
+
+RLS is enabled with no policies, which denies everyone except the service key.
+That's correct here: the browser never talks to Postgres, it talks to Apps
+Script, which holds the key.
 
 ## How auto-grading works
 
@@ -248,7 +293,7 @@ The grading logic is pure JavaScript, so it runs outside Apps Script:
 
 ```
 node tools/grading-test.js    # 48 assertions: spreads, totals, moneylines, edge cases
-node tools/pipeline-test.js   # 49 assertions: full runs against a fake Sheet
+node tools/pipeline-test.js   # 60 assertions: full runs against a fake Sheet, plus layering
 node tools/build-test.js      # 11 assertions: the real Netlify build
 node tools/backtest-test.js   # 42 assertions: the audit and the backtest
 ```
