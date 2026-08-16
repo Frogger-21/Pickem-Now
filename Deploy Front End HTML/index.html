@@ -202,19 +202,20 @@
 // To run this file straight off your desktop, set the override once in the
 // browser console and reload:
 //     localStorage.setItem('pg_api', 'https://script.google.com/.../exec')
-const API_PLACEHOLDER = '__APPS_SCRIPT_URL__';
-
 const CONFIG = {
   API: (function () {
     try { const o = localStorage.getItem('pg_api'); if (o) return o; } catch (_) {}
-    return API_PLACEHOLDER;
+    return '__APPS_SCRIPT_URL__';
   })()
 };
 
 /** Nothing works without a backend URL, so say so plainly instead of letting
-    every fetch fail with a confusing parse error. */
+    every fetch fail with a confusing parse error.
+    Deliberately tests the shape of the value rather than comparing against a
+    named placeholder constant: sed substitutes the token everywhere, so such
+    a constant would itself be rewritten and always match. */
 function apiConfigured() {
-  return !!CONFIG.API && CONFIG.API !== API_PLACEHOLDER && /^https?:\/\//.test(CONFIG.API);
+  return /^https?:\/\/\S+$/.test(String(CONFIG.API || ''));
 }
 
 /* =================== DOM HELPERS =================== */
