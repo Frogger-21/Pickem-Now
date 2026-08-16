@@ -34,8 +34,32 @@ deployment URL.
 
 ### 3. Point the frontend at it
 
-In `index.html`, set `CONFIG.API` to that deployment URL, then deploy the
-`Deploy Front End HTML` folder to Netlify.
+The URL is **not** committed. Netlify holds it as an environment variable and
+`tools/inject-config.sh` writes it into `index.html` during the build:
+
+**Netlify → Site configuration → Environment variables → Add a variable**
+
+| Key | Value |
+|---|---|
+| `APPS_SCRIPT_URL` | the Apps Script Web App URL, ending in `/exec` |
+
+Redeploying the Apps Script can issue a **new** `/exec` URL — if it does,
+update this variable or the site will talk to the old deployment.
+
+The build fails on a missing or malformed value rather than publishing a site
+that can't reach its backend. If a bad build ever does get through, the page
+says "Backend not configured" instead of failing silently.
+
+> **Deploy by hand and this step is skipped.** Drag-and-drop uploads run no
+> build command, so the placeholder stays literal and the site comes up
+> unconfigured. Push to `main` instead and let Netlify build it.
+
+To open `index.html` straight off your desktop, set the override once in the
+browser console and reload:
+
+```js
+localStorage.setItem('pg_api', 'https://script.google.com/…/exec')
+```
 
 ### 4. Turn on auto-grading
 
