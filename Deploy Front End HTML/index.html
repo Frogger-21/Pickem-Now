@@ -195,10 +195,27 @@
 
 <script>
 /* =================== CONFIG =================== */
+// The Apps Script Web App URL (ends in /exec). It is NOT stored in this repo:
+// Netlify swaps the placeholder below for the APPS_SCRIPT_URL environment
+// variable at build time (see tools/inject-config.sh).
+//
+// To run this file straight off your desktop, set the override once in the
+// browser console and reload:
+//     localStorage.setItem('pg_api', 'https://script.google.com/.../exec')
+const API_PLACEHOLDER = '__APPS_SCRIPT_URL__';
+
 const CONFIG = {
-  // Must point to your deployed Google Apps Script Web App URL and end with /exec
-  API: 'enter google apps script deployment id here'
+  API: (function () {
+    try { const o = localStorage.getItem('pg_api'); if (o) return o; } catch (_) {}
+    return API_PLACEHOLDER;
+  })()
 };
+
+/** Nothing works without a backend URL, so say so plainly instead of letting
+    every fetch fail with a confusing parse error. */
+function apiConfigured() {
+  return !!CONFIG.API && CONFIG.API !== API_PLACEHOLDER && /^https?:\/\//.test(CONFIG.API);
+}
 
 /* =================== DOM HELPERS =================== */
 const el  = s => document.querySelector(s);
@@ -578,6 +595,18 @@ document.addEventListener('DOMContentLoaded', ()=>{
   el('#weekPicker').addEventListener('change', e=> buildWeek(e.target.value));
 
   updateWeekLabel();
+
+  if (!apiConfigured()) {
+    el('#games').innerHTML =
+      '<div class="hint"><strong>Backend not configured.</strong><br>' +
+      'This build went out without an Apps Script URL. Set the ' +
+      '<code>APPS_SCRIPT_URL</code> environment variable in Netlify and redeploy, ' +
+      'or for local use run <code>localStorage.setItem(\'pg_api\',\'https://…/exec\')</code> ' +
+      'in the console and reload.</div>';
+    el('#btnSubmit').disabled = true;
+    return;
+  }
+
   fetchOdds();
   buildBoard();
   if((el('#emailInput').value||'').trim()) loadMyPicks();
