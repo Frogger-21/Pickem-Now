@@ -1,0 +1,20 @@
+# This repo is public. Never commit keys.
+.env
+.env.*
+*.key
+secrets.json
+local-config.js
+
+# Apps Script tooling, if you ever use clasp
+.clasp.json
+.clasprc.json
+
+node_modules/
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/

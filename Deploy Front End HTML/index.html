@@ -145,10 +145,25 @@
     </section>
 
     <section id="view-board" class="view hidden">
-      <h3>Scoreboard</h3>
+      <div class="pickRow" style="margin-top:0">
+        <h3 style="margin:0">Season</h3>
+        <span class="right"><button class="ghost" id="btnRefreshBoard">Refresh</button></span>
+      </div>
       <table class="table" id="boardTable">
         <thead><tr>
-          <th>User</th><th>Wins</th><th>Losses</th><th>Pushes</th><th>Total</th>
+          <th>User</th><th>Weeks</th><th>W</th><th>L</th><th>P</th><th>Pct</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+
+      <div class="pickRow" style="margin-top:18px">
+        <h3 style="margin:0">By week</h3>
+        <select id="weekPicker" style="margin-left:8px"></select>
+        <span class="right alert status" id="weekStatus"></span>
+      </div>
+      <table class="table" id="weekTable">
+        <thead><tr>
+          <th>User</th><th>W</th><th>L</th><th>P</th><th>Pending</th>
         </tr></thead>
         <tbody></tbody>
       </table>
@@ -456,14 +471,72 @@ async function loadMyPicks(){
   function cell(text,label,attrs={}){ const td=document.createElement('td'); td.textContent=(text==null?'':text); td.setAttribute('data-label',label); Object.entries(attrs).forEach(([k,v])=>td.setAttribute(k,v)); return td; }
 }
 
+/* Season table: weeks won leads, record and win pct behind it. */
 async function buildBoard(){
   const r=await fetch(CONFIG.API+'?fn=board'); const j=await r.json();
   const tbody=el('#boardTable tbody'); tbody.innerHTML='';
+  const rows=j.rows||[];
+  if(!rows.length){
+    tbody.innerHTML='<tr><td colspan="6" class="hint">No graded picks yet.</td></tr>';
+  } else {
+    rows.forEach((row,i)=>{
+      const tr=document.createElement('tr');
+      // .644 rather than 0.644 — the leading zero is noise in a standings table
+      const pct=(row.pct||0).toFixed(3).replace(/^0/,'');
+      const trophy = (i===0 && row.weeksWon>0) ? ' 🏆' : '';
+      tr.innerHTML=`
+        <td>${row.user}${trophy}</td>
+        <td><strong>${row.weeksWon}</strong></td>
+        <td>${row.wins}</td><td>${row.losses}</td><td>${row.pushes}</td>
+        <td>${pct}</td>`;
+      tbody.appendChild(tr);
+    });
+  }
+  await buildWeekPicker();
+}
+
+/* Week dropdown, newest first, flagged with who took each one. */
+async function buildWeekPicker(){
+  const sel=el('#weekPicker'); if(!sel) return;
+  const r=await fetch(CONFIG.API+'?fn=weeks'); const j=await r.json();
+  const weeks=j.weeks||[];
+  const keep=sel.value;
+  sel.innerHTML=weeks.map(w=>{
+    const tag = w.decided
+      ? (w.winners.length>1 ? ' — tie: '+w.winners.join(', ') : ' — '+w.winners[0])
+      : ' — in progress';
+    return `<option value="${w.week}">${w.week}${tag}</option>`;
+  }).join('');
+  if(!weeks.length){ el('#weekTable tbody').innerHTML=''; el('#weekStatus').textContent=''; return; }
+  sel.value = weeks.some(w=>w.week===keep) ? keep : weeks[0].week;
+  await buildWeek(sel.value);
+}
+
+async function buildWeek(week){
+  if(!week) return;
+  const r=await fetch(CONFIG.API+'?fn=week&week='+encodeURIComponent(week));
+  const j=await r.json();
+  const tbody=el('#weekTable tbody'); tbody.innerHTML='';
   (j.rows||[]).forEach(row=>{
-    const tr=document.createElement('tr'); tr.innerHTML=`
-      <td>${row.user}</td><td>${row.wins}</td><td>${row.losses}</td><td>${row.pushes}</td><td>${row.total}</td>
-    `; tbody.appendChild(tr);
+    const tr=document.createElement('tr');
+    if(row.winner) tr.style.fontWeight='700';
+    tr.innerHTML=`
+      <td>${row.user}${row.winner?' 🏆':''}</td>
+      <td>${row.wins}</td><td>${row.losses}</td><td>${row.pushes}</td>
+      <td>${row.pending||''}</td>`;
+    tbody.appendChild(tr);
   });
+  const s=el('#weekStatus');
+  if(!j.rows || !j.rows.length){ s.textContent='No picks this week.'; s.className='status alert'; }
+  else if(j.decided){
+    s.textContent = j.winners.length>1
+      ? 'Tied: '+j.winners.join(', ')
+      : 'Winner: '+j.winners[0];
+    s.className='status alert ok';
+  } else {
+    s.textContent='Still grading — some picks are pending.';
+    s.className='status alert';
+  }
 }
 
 /* =================== USER BADGE + TABS =================== */
@@ -501,6 +574,8 @@ document.addEventListener('DOMContentLoaded', ()=>{
   el('#sportFilter').addEventListener('change', filterByWeek);
   el('#btnRefresh').addEventListener('click', fetchOdds);
   el('#btnSubmit').addEventListener('click', submitPicks);
+  el('#btnRefreshBoard').addEventListener('click', buildBoard);
+  el('#weekPicker').addEventListener('change', e=> buildWeek(e.target.value));
 
   updateWeekLabel();
   fetchOdds();
