@@ -1081,3 +1081,275 @@ function checkOddsApi() {
   Logger.log(msg);
   return msg;
 }
+
+// ===== TESTING AGAINST OLD WEEKS =============================================
+// The scores feed only reaches back three days (daysFrom maxes at 3) and the
+// historical endpoints are a paid add-on, so old games cannot be re-fetched.
+// These two work anyway, and neither spends a credit.
+//
+//   auditGrades()               finds contradictions in grades you already
+//                               have. Needs no scores at all.
+//   backtestTemplate(week)      prints a fill-in-the-blanks list of that
+//                               week's games.
+//   backtestWeek(week, scores)  grades that week's real picks against the
+//                               scores you filled in and compares the verdicts
+//                               to how the week was graded by hand.
+//
+// Both are read-only. Neither writes a thing to the Sheet.
+
+/** "Away Team @ Home Team" back into its two sides, the way the frontend
+    builds it. Returns null if it isn't that shape. */
+function splitMatchup_(matchup) {
+  const parts = String(matchup || '').split('@');
+  if (parts.length !== 2) return null;
+  const away = parts[0].trim(), home = parts[1].trim();
+  if (!away || !home) return null;
+  return { away: away, home: home };
+}
+
+/** Every pick in one week, with meta already parsed. */
+function readWeekPicks_(week) {
+  const sh = openSheet_(PICKS_SHEET);
+  const data = sh.getDataRange().getValues();
+  if (data.length < 2) return [];
+  const H = headerIndex_(data[0]);
+  const want = String(week);
+  const out = [];
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][H.week] || '') !== want) continue;
+    out.push({
+      row:       i + 1,
+      id:        String(data[i][H.id] || ''),
+      user:      String(data[i][H.user] || ''),
+      league:    String(data[i][H.league] || ''),
+      gameId:    String(data[i][H.gameId] || ''),
+      matchup:   String(data[i][H.matchup] || ''),
+      market:    String(data[i][H.market] || ''),
+      kind:      String(data[i][H.kind] || ''),
+      selection: String(data[i][H.selection] || ''),
+      meta:      parseMeta_(data[i][H.meta]),
+      status:    String(data[i][H.status] || '').toLowerCase()
+    });
+  }
+  return out;
+}
+
+/**
+ * Print a ready-to-edit call for backtestWeek. Look the final scores up, type
+ * them in, and run the result.
+ */
+function backtestTemplate(week) {
+  const picks = readWeekPicks_(week);
+  if (!picks.length) return 'No picks found for week "' + week + '". Try getWeeks_() for the list.';
+
+  const games = {};
+  for (const p of picks) {
+    if (!p.gameId) continue;
+    if (!games[p.gameId]) games[p.gameId] = { matchup: p.matchup, league: p.league, picks: 0 };
+    games[p.gameId].picks++;
+  }
+
+  const lines = Object.keys(games).map(function (id) {
+    const g = games[id];
+    return "  '" + id + "': [0, 0],   // [home, away]  " + g.matchup + '  (' + g.league + ', ' + g.picks + ' pick(s))';
+  });
+
+  const msg = 'Fill in the real final scores and run this:\n\n'
+    + "backtestWeek('" + week + "', {\n" + lines.join('\n') + '\n});\n\n'
+    + 'Scores go in as [home, away] — the matchup reads "away @ home", so the\n'
+    + 'second team named is the first number.';
+  Logger.log(msg);
+  return msg;
+}
+
+/**
+ * Grade a past week's real picks against scores you supply, then compare with
+ * how it was graded at the time. Writes nothing.
+ *
+ * scores: { gameId: [homeScore, awayScore] }
+ */
+function backtestWeek(week, scores) {
+  const picks = readWeekPicks_(week);
+  if (!picks.length) return 'No picks found for week "' + week + '".';
+  scores = scores || {};
+
+  const agreed = [], disagreed = [], ungraded = [], noScore = [];
+
+  for (const p of picks) {
+    const s = scores[p.gameId];
+    if (!s) { noScore.push(p); continue; }
+
+    const sides = splitMatchup_(p.matchup);
+    if (!sides) { ungraded.push({ pick: p, why: 'matchup "' + p.matchup + '" is not "away @ home"' }); continue; }
+
+    const verdict = gradePickAgainstResult_(p, {
+      completed: true,
+      home_team: sides.home,
+      away_team: sides.away,
+      homeScore: s[0],
+      awayScore: s[1]
+    });
+
+    if (!verdict) { ungraded.push({ pick: p, why: 'grader declined' }); continue; }
+    if (!p.status || p.status === 'pending') { agreed.push({ pick: p, verdict: verdict, wasPending: true }); continue; }
+    if (verdict === p.status) agreed.push({ pick: p, verdict: verdict });
+    else disagreed.push({ pick: p, verdict: verdict });
+  }
+
+  const out = [];
+  out.push('BACKTEST ' + week + ' — ' + picks.length + ' pick(s)');
+  out.push('  auto-grader agreed with the sheet : ' + agreed.filter(function (a) { return !a.wasPending; }).length);
+  out.push('  disagreed                         : ' + disagreed.length);
+  out.push('  previously ungraded, now decided  : ' + agreed.filter(function (a) { return a.wasPending; }).length);
+  out.push('  grader declined to call           : ' + ungraded.length);
+  out.push('  no score supplied                 : ' + noScore.length);
+
+  if (disagreed.length) {
+    out.push('');
+    out.push('DISAGREEMENTS — one of the two is wrong, worth looking at:');
+    for (const d of disagreed) {
+      out.push('  ' + d.pick.user + '  ' + d.pick.matchup + '  ' + d.pick.market + ' ' + d.pick.kind
+        + ' ' + d.pick.selection + lineNote_(d.pick)
+        + '\n      sheet says ' + d.pick.status + ', grader says ' + d.verdict + '  (row ' + d.pick.row + ')');
+    }
+  }
+  if (ungraded.length) {
+    out.push('');
+    out.push('DECLINED — these would stay pending in a real run:');
+    for (const u of ungraded) {
+      out.push('  ' + u.pick.user + '  ' + u.pick.matchup + '  ' + u.pick.market + ': ' + u.why + '  (row ' + u.pick.row + ')');
+    }
+  }
+  if (noScore.length) {
+    const ids = {};
+    for (const p of noScore) ids[p.gameId] = p.matchup;
+    out.push('');
+    out.push('NO SCORE GIVEN for: ' + Object.keys(ids).map(function (k) { return ids[k]; }).join(', '));
+  }
+
+  const msg = out.join('\n');
+  Logger.log(msg);
+  return msg;
+}
+
+function lineNote_(p) {
+  if (p.market === 'spread' && p.meta && p.meta.line !== undefined) return ' (' + p.meta.line + ')';
+  if (p.market === 'total'  && p.meta && p.meta.total !== undefined) return ' (' + p.meta.total + ')';
+  return '';
+}
+
+// ===== GRADE AUDIT ===========================================================
+/**
+ * Finds contradictions in grades that already exist, without needing a single
+ * final score.
+ *
+ * The trick: two people on opposite sides of the same number cannot both be
+ * right. If one took a team at -6.5 and won, whoever took the other side at
+ * +6.5 must have lost. Over and under on the same total, likewise. A moneyline
+ * winner tells you who won the game outright, which in turn settles any spread
+ * pick on that team where the points can only have helped.
+ *
+ * Every contradiction it reports is a genuine mistake in the sheet — the sort
+ * of thing hand-grading produces and nobody notices until the season is over.
+ */
+function auditGrades() {
+  const sh = openSheet_(PICKS_SHEET);
+  const data = sh.getDataRange().getValues();
+  if (data.length < 2) return 'No picks yet.';
+  const H = headerIndex_(data[0]);
+
+  const byGame = {};
+  let decided = 0;
+  for (let i = 1; i < data.length; i++) {
+    const week = String(data[i][H.week] || '');
+    if (week === SELFTEST_WEEK) continue;
+    const status = String(data[i][H.status] || '').toLowerCase();
+    if (status !== 'win' && status !== 'loss' && status !== 'push') continue;
+    const gameId = String(data[i][H.gameId] || '');
+    if (!gameId) continue;
+
+    const sides = splitMatchup_(String(data[i][H.matchup] || ''));
+    decided++;
+    const p = {
+      row: i + 1, week: week,
+      user: String(data[i][H.user] || ''),
+      matchup: String(data[i][H.matchup] || ''),
+      market: String(data[i][H.market] || '').toLowerCase(),
+      kind: String(data[i][H.kind] || '').toLowerCase(),
+      selection: String(data[i][H.selection] || ''),
+      meta: parseMeta_(data[i][H.meta]) || {},
+      status: status,
+      side: sides ? sideOf_(String(data[i][H.selection] || ''), sides.home, sides.away) : null
+    };
+    (byGame[gameId] = byGame[gameId] || []).push(p);
+  }
+
+  const problems = [];
+  for (const gameId of Object.keys(byGame)) {
+    const ps = byGame[gameId];
+    for (let a = 0; a < ps.length; a++) {
+      for (let b = a + 1; b < ps.length; b++) {
+        const x = ps[a], y = ps[b];
+
+        // Opposite sides of the same spread number.
+        if (x.market === 'spread' && y.market === 'spread' && x.side && y.side && x.side !== y.side) {
+          const lx = num_(x.meta.line), ly = num_(y.meta.line);
+          if (isFinite(lx) && isFinite(ly) && lx === -ly && y.status !== complement_(x.status)) {
+            problems.push(pairNote_('same spread, opposite sides', x, y));
+          }
+        }
+        // Over and under on the same total.
+        if (x.market === 'total' && y.market === 'total' && x.kind && y.kind && x.kind !== y.kind) {
+          const tx = num_(x.meta.total), ty = num_(y.meta.total);
+          if (isFinite(tx) && isFinite(ty) && tx === ty && y.status !== complement_(x.status)) {
+            problems.push(pairNote_('same total, over vs under', x, y));
+          }
+        }
+        // Opposite moneylines.
+        if (x.market === 'moneyline' && y.market === 'moneyline' && x.side && y.side && x.side !== y.side) {
+          if (y.status !== complement_(x.status)) problems.push(pairNote_('opposite moneylines', x, y));
+        }
+        // A moneyline result settles some spreads outright. If a team won the
+        // game and was also getting points (or laying none), it covered — no
+        // score needed to know that.
+        const ml = x.market === 'moneyline' ? x : (y.market === 'moneyline' ? y : null);
+        const sp = x.market === 'spread'    ? x : (y.market === 'spread'    ? y : null);
+        if (ml && sp && ml.side && sp.side && ml.status !== 'push') {
+          const line = num_(sp.meta.line);
+          const spWon = (ml.status === 'win') === (ml.side === sp.side);   // did sp's team win outright?
+          if (isFinite(line)) {
+            if (spWon && line >= 0 && sp.status !== 'win') {
+              problems.push(pairNote_('won outright while getting ' + line + ', so it covered', ml, sp));
+            }
+            if (!spWon && line <= 0 && sp.status !== 'loss') {
+              problems.push(pairNote_('lost outright while laying ' + line + ', so it did not cover', ml, sp));
+            }
+          }
+        }
+      }
+    }
+  }
+
+  const msg = problems.length
+    ? 'GRADE AUDIT — ' + problems.length + ' contradiction(s) across ' + decided + ' graded pick(s):\n\n'
+      + problems.join('\n\n')
+      + '\n\nEach of these is two grades that cannot both be right. Check the rows.'
+    : 'GRADE AUDIT — no contradictions found across ' + decided + ' graded pick(s).\n'
+      + '  Note this can only check games where two picks disagree with each other;\n'
+      + '  a game only one person picked has nothing to check it against.';
+  Logger.log(msg);
+  return msg;
+}
+
+function complement_(status) {
+  if (status === 'win')  return 'loss';
+  if (status === 'loss') return 'win';
+  if (status === 'push') return 'push';
+  return null;
+}
+
+function pairNote_(why, x, y) {
+  return '  ' + x.week + '  ' + x.matchup + '  [' + why + ']\n'
+    + '    row ' + x.row + '  ' + x.user + '  ' + x.market + ' ' + x.kind + ' ' + x.selection + lineNote_(x) + '  -> ' + x.status + '\n'
+    + '    row ' + y.row + '  ' + y.user + '  ' + y.market + ' ' + y.kind + ' ' + y.selection + lineNote_(y) + '  -> ' + y.status;
+}

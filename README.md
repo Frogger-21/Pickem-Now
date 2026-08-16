@@ -106,6 +106,86 @@ If the self-test ever dies before cleaning up, its rows carry the week
 `__selftest__`, which the scoreboard ignores outright — a half-finished test
 can't put a fake player on the board. Running it again clears the leftovers.
 
+## Testing against old weeks
+
+Old games can't be re-fetched. `daysFrom` maxes out at 3, and The Odds API's
+historical endpoints are a paid add-on, so anything from last season is simply
+not retrievable. Two functions work around that, and neither costs a credit.
+Both are read-only — they never write to the Sheet.
+
+### `auditGrades()` — needs no scores at all
+
+Two people on opposite sides of the same number cannot both be right. If one
+took a team at −6.5 and won, whoever took the other side at +6.5 must have
+lost. Over and under on the same total, likewise. And a moneyline winner tells
+you who won outright, which settles any spread pick on that team where the
+points could only have helped — no score required.
+
+So this scans every grade already in the sheet and reports the pairs that
+contradict each other:
+
+```
+GRADE AUDIT — 1 contradiction(s) across 240 graded pick(s):
+
+  2025-11-09  Buffalo Bills @ Kansas City Chiefs  [same spread, opposite sides]
+    row 2  Ann  spread favorite Kansas City Chiefs (-6.5)  -> win
+    row 3  Bob  spread underdog Buffalo Bills (6.5)  -> win
+```
+
+Every hit is a real mistake in the sheet — the kind hand-grading produces and
+nobody notices. Run it on your whole history right now.
+
+It's deliberately conservative: different lines on the same game are allowed to
+agree (a 7-point win covers −6.5 *and* pushes +7), a tied moneyline is never
+used to infer anything, and a matchup it can't parse is skipped rather than
+guessed at. An audit that cries wolf is worse than no audit, because you stop
+reading it.
+
+Its blind spot: a game only one person picked has nothing to check it against.
+
+### `backtestWeek()` — real picks, scores typed in once
+
+The stronger test, if you'll spend two minutes looking scores up. Start with:
+
+```js
+backtestTemplate('2025-11-09')
+```
+
+which prints one line per game in that week, ready to fill in:
+
+```js
+backtestWeek('2025-11-09', {
+  'a1b2c3': [0, 0],   // [home, away]  Buffalo Bills @ Kansas City Chiefs  (NFL, 3 pick(s))
+});
+```
+
+Put the real finals in and run it. It grades that week's actual picks — real
+lines, real selections — and compares verdict by verdict against how you graded
+them at the time:
+
+```
+BACKTEST 2025-11-09 — 12 pick(s)
+  auto-grader agreed with the sheet : 11
+  disagreed                         : 1
+
+DISAGREEMENTS — one of the two is wrong, worth looking at:
+  Cid  Buffalo Bills @ Kansas City Chiefs  total over Over (45.5)
+      sheet says loss, grader says win  (row 14)
+```
+
+Scores go in as `[home, away]`. The matchup reads "away @ home", so the second
+team named is the first number.
+
+This is the closest thing to proof that auto-grading would have got your season
+right, because the answers are ones you already know.
+
+### A third option: recent games
+
+`daysFrom=3` does cover the last three days, so if there are completed games in
+the feed — preseason counts — you can put a throwaway pick on one and watch
+`autoGrade()` grade it for real, network and all. `checkOddsApi()` shows what's
+currently there.
+
 ## Sheets
 
 | Sheet | Contents |
@@ -170,6 +250,7 @@ The grading logic is pure JavaScript, so it runs outside Apps Script:
 node tools/grading-test.js    # 48 assertions: spreads, totals, moneylines, edge cases
 node tools/pipeline-test.js   # 49 assertions: full runs against a fake Sheet
 node tools/build-test.js      # 11 assertions: the real Netlify build
+node tools/backtest-test.js   # 42 assertions: the audit and the backtest
 ```
 
 `pipeline-test.js` builds a fake spreadsheet and a fake Odds API, then checks
@@ -177,6 +258,10 @@ that grades land on the right rows, that the credit short-circuits fire, and
 that resubmitting replaces rather than duplicates. It also runs `runSelfTest()`
 itself, so a broken self-test shows up on the laptop rather than halfway
 through a football Sunday.
+
+`backtest-test.js` spends most of its effort on the *quiet* direction — proving
+`auditGrades()` stays silent on grades that are legitimately consistent. A
+false alarm there costs more than a missed one.
 
 Both are worth running after any change to grading — a sign error on spreads
 would quietly hand the league to the wrong person.
