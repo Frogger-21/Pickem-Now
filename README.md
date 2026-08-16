@@ -67,6 +67,45 @@ Run `installAutoGradeTrigger()` once from the editor. It schedules `autoGrade`
 every six hours and clears its own previous triggers, so re-running it won't
 stack duplicates. `removeAutoGradeTriggers()` turns it off.
 
+## Testing grading without any games
+
+Grading is hardest to trust in the off season, because there is nothing to
+grade. Two functions cover it, and neither needs a live game.
+
+**`runSelfTest()`** — the important one. It writes a throwaway week of sixteen
+picks and a set of invented final scores into the Sheet, runs the *real*
+grading pass over them, checks every verdict against what it should be, then
+deletes everything it made. Run it from the editor any time; it costs **zero
+API credits** and either prints
+
+```
+SELF TEST PASSED - all 16 picks graded correctly, 0 API credits used.
+```
+
+or names each pick it got wrong and what it expected instead.
+
+The fixtures are chosen to be awkward on purpose. The invented game finishes
+27-20, so a −6.5 favourite covers, a −7 favourite pushes, and the total lands
+exactly on 47. There is a tied game for the moneyline push, an unfinished game,
+a finished game with no scores in the feed, and a pick whose team name matches
+nothing. The last four must come out **pending** — leaving a pick ungraded is
+always safer than grading it wrong, and a self-test that only checked the happy
+path would miss that.
+
+It grades through `runAutoGrade_({ noFetch: true })`, the same function the
+six-hourly trigger calls, so it exercises the row arithmetic and the status
+write-back rather than just the arithmetic. The one thing it can't cover is
+`fetchScores_`, since that needs the network.
+
+**`checkOddsApi()`** — covers the other half. One call, **1 credit**, proving
+the API key works and printing what the scores feed currently holds plus your
+remaining credits. Out of season it reports an empty feed; that's a pass, not a
+failure. Run it on a game day to see real games and their event ids.
+
+If the self-test ever dies before cleaning up, its rows carry the week
+`__selftest__`, which the scoreboard ignores outright — a half-finished test
+can't put a fake player on the board. Running it again clears the leftovers.
+
 ## Sheets
 
 | Sheet | Contents |
@@ -129,12 +168,15 @@ The grading logic is pure JavaScript, so it runs outside Apps Script:
 
 ```
 node tools/grading-test.js    # 48 assertions: spreads, totals, moneylines, edge cases
-node tools/pipeline-test.js   # 36 assertions: full runs against a fake Sheet
+node tools/pipeline-test.js   # 49 assertions: full runs against a fake Sheet
+node tools/build-test.js      # 11 assertions: the real Netlify build
 ```
 
 `pipeline-test.js` builds a fake spreadsheet and a fake Odds API, then checks
 that grades land on the right rows, that the credit short-circuits fire, and
-that resubmitting replaces rather than duplicates.
+that resubmitting replaces rather than duplicates. It also runs `runSelfTest()`
+itself, so a broken self-test shows up on the laptop rather than halfway
+through a football Sunday.
 
 Both are worth running after any change to grading — a sign error on spreads
 would quietly hand the league to the wrong person.

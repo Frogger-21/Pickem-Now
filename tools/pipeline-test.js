@@ -81,7 +81,8 @@ function harness(sheets, scoresByLeague) {
   const names = Object.keys(env);
   const api = new Function(
     ...names,
-    SRC + "return { runAutoGrade_, submitPicks_, getBoard_, getWeek_, getWeeks_, tallies_ };"
+    SRC + "return { runAutoGrade_, submitPicks_, getBoard_, getWeek_, getWeeks_, tallies_," +
+          " runSelfTest, selfTestPicks_, SELFTEST_WEEK };"
   )(...names.map((n) => env[n]));
 
   return { api, store, calls };
@@ -256,6 +257,59 @@ section("season board and weekly winners");
   const weeks = api.getWeeks_();
   ok(weeks.length === 3, "three weeks listed", weeks.length);
   ok(weeks[0].week === "2026-01-21", "newest week first", weeks[0].week);
+}
+
+// ---------------------------------------------------------------- self test
+// runSelfTest() is what gets run inside Apps Script when there are no live
+// games. Running it here too means a broken self-test is caught on the laptop
+// rather than discovered halfway through a football Sunday.
+section("runSelfTest grades its own fixtures");
+{
+  // A real week already in the sheet, to check the self-test leaves it alone.
+  const picks = [PICK_HEADERS,
+    row("real1", "a@x.com", "Ann", "NFL", "g1", "spread", "favorite", "Kansas City Chiefs", { line: -6.5 }, "win"),
+    row("real2", "b@x.com", "Bob", "NFL", "g9", "moneyline", "ml", "Some Team", {}, "pending")
+  ];
+  const { api, store, calls } = harness({ Picks: picks, Results: [] }, SCORES);
+
+  const msg = api.runSelfTest();
+  ok(/^SELF TEST PASSED/.test(msg), "self test passes", msg);
+  ok(calls.length === 0, "and never touched the Odds API", calls.length);
+
+  // Every branch of the grader is covered, not just the easy ones.
+  const fx = api.selfTestPicks_();
+  const kinds = fx.reduce((m, p) => (m[p.expect] = (m[p.expect] || 0) + 1, m), {});
+  ok(kinds.win >= 3 && kinds.loss >= 3 && kinds.push >= 4, "wins, losses and pushes all covered", JSON.stringify(kinds));
+  ok(kinds.pending >= 5, "and the refuse-to-grade cases", kinds.pending);
+  ok(new Set(fx.map(p => p.market)).size >= 3, "spread, total and moneyline all present");
+
+  // It has to clean up after itself, in the real sheet.
+  const H = PICK_HEADERS;
+  const leftover = store.Picks.rows.slice(1).filter(r => String(r[H.indexOf("week")]) === api.SELFTEST_WEEK);
+  ok(leftover.length === 0, "no self-test picks left behind", leftover.length);
+  const junkResults = store.Results.rows.slice(1).filter(r => String(r[0]).indexOf("__selftest_") === 0);
+  ok(junkResults.length === 0, "no self-test results left behind", junkResults.length);
+
+  // And it must not have disturbed the real rows.
+  ok(store.Picks.rows.length === 3, "the real picks are still there", store.Picks.rows.length - 1);
+  ok(String(store.Picks.rows[1][H.indexOf("status")]) === "win", "an already-graded pick is untouched");
+  ok(String(store.Picks.rows[2][H.indexOf("status")]) === "pending", "an unrelated pending pick stays pending");
+}
+
+section("a self-test week can never reach the scoreboard");
+{
+  // Simulates the self-test dying before cleanup: its rows are still in the
+  // sheet. The board must ignore them anyway.
+  const picks = [PICK_HEADERS,
+    row("real1", "a@x.com", "Ann", "NFL", "g1", "spread", "favorite", "Kansas City Chiefs", { line: -6.5 }, "win"),
+    row("st0", "selftest@example.invalid", "Selftest", "NFL", "x", "moneyline", "ml", "X", {}, "win", "__selftest__")
+  ];
+  const { api } = harness({ Picks: picks, Results: [] }, SCORES);
+
+  const board = api.getBoard_();
+  ok(board.length === 1, "only the real user is on the board", board.map(r => r.user).join());
+  ok(board[0].user === "Ann", "and it is the right one", board[0].user);
+  ok(api.getWeeks_().every(w => w.week !== "__selftest__"), "the fake week is not listed");
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

@@ -550,7 +550,14 @@ function autoGrade() {
   }
 }
 
-function runAutoGrade_() {
+/**
+ * opts.noFetch skips the API entirely and grades against whatever is already
+ * cached in Results. The self-test uses it to exercise this exact function
+ * for zero credits; without it a self-test run would also go and fetch every
+ * unrelated pending pick in the sheet.
+ */
+function runAutoGrade_(opts) {
+  const noFetch = !!(opts && opts.noFetch);
   const sh = openSheet_(PICKS_SHEET);
   const data = sh.getDataRange().getValues();
   if (data.length < 2) return { graded: 0, stillPending: 0, creditsUsed: 0, note: 'no picks yet' };
@@ -591,7 +598,7 @@ function runAutoGrade_() {
 
   let creditsUsed = 0;
   const fetchErrors = [];
-  for (const lg of Object.keys(needByLeague)) {
+  for (const lg of (noFetch ? [] : Object.keys(needByLeague))) {
     const ids = Object.keys(needByLeague[lg]);
     if (!ids.length) continue;
     try {
@@ -765,6 +772,9 @@ function tallies_() {
     const user = String(row[H.user] || '').trim();
     if (!user) continue;
     const week   = String(row[H.week] || '');
+    // Belt and braces: runSelfTest deletes its own rows, but if it ever dies
+    // mid-run (script timeout, say) its fake week must not reach the board.
+    if (week === SELFTEST_WEEK) continue;
     const status = String(row[H.status] || '').toLowerCase();
 
     if (!users[user]) users[user] = { wins:0, losses:0, pushes:0, pending:0, total:0, weeksPlayed:{} };
@@ -875,4 +885,199 @@ function gradePick_(email, id, result) {
     }
   }
   throw new Error('pick not found');
+}
+
+// ===== SELF TEST =============================================================
+// There is rarely a live game when you want to check that grading works, so
+// this proves it without one. It writes a throwaway week of picks and a set of
+// invented final scores into the real Sheet, runs the real grading pass over
+// them, checks every verdict, and deletes everything it made.
+//
+// It never calls the Odds API, so it costs zero credits and can be run as
+// often as you like. What it does NOT cover is fetchScores_ — for that, run
+// checkOddsApi() once when games are actually on.
+
+const SELFTEST_WEEK   = '__selftest__';
+const SELFTEST_EMAIL  = 'selftest@example.invalid';
+const SELFTEST_PREFIX = '__selftest_';
+
+/**
+ * Invented games. Deliberately awkward: a tie, an unfinished game, and a
+ * finished game with no scores attached — the two cases that must stay
+ * pending rather than be guessed at.
+ */
+function selfTestResults_() {
+  return [
+    // 27-20 home. Margin +7, total 47.
+    { gameId: SELFTEST_PREFIX + 'g1', league: 'NFL',
+      home_team: 'Selftest Home Alpha', away_team: 'Selftest Away Alpha',
+      homeScore: 27, awayScore: 20, completed: true },
+    // 21-21. A tie, so the moneyline is a push.
+    { gameId: SELFTEST_PREFIX + 'g2', league: 'NFL',
+      home_team: 'Selftest Home Bravo', away_team: 'Selftest Away Bravo',
+      homeScore: 21, awayScore: 21, completed: true },
+    // Not finished.
+    { gameId: SELFTEST_PREFIX + 'g3', league: 'NFL',
+      home_team: 'Selftest Home Delta', away_team: 'Selftest Away Delta',
+      homeScore: 10, awayScore: 3, completed: false },
+    // Finished but scoreless in the feed - this is the Number('') === 0 trap.
+    { gameId: SELFTEST_PREFIX + 'g4', league: 'NFL',
+      home_team: 'Selftest Home Echo', away_team: 'Selftest Away Echo',
+      homeScore: '', awayScore: '', completed: true }
+  ];
+}
+
+/** Each pick carries the verdict it must end up with. */
+function selfTestPicks_() {
+  const g1 = SELFTEST_PREFIX + 'g1', g2 = SELFTEST_PREFIX + 'g2';
+  const g3 = SELFTEST_PREFIX + 'g3', g4 = SELFTEST_PREFIX + 'g4';
+  const HA = 'Selftest Home Alpha', AA = 'Selftest Away Alpha';
+
+  return [
+    // --- spreads. Home won by 7, so the number 7 is the pivot.
+    { why: 'favourite covers',       gameId: g1, market: 'spread', kind: 'favorite', selection: HA, meta: { line: -6.5 }, expect: 'win'  },
+    { why: 'dog fails to cover',     gameId: g1, market: 'spread', kind: 'underdog', selection: AA, meta: { line:  6.5 }, expect: 'loss' },
+    { why: 'favourite lands on it',  gameId: g1, market: 'spread', kind: 'favorite', selection: HA, meta: { line: -7   }, expect: 'push' },
+    { why: 'dog lands on it',        gameId: g1, market: 'spread', kind: 'underdog', selection: AA, meta: { line:  7   }, expect: 'push' },
+
+    // --- totals. 27 + 20 = 47.
+    { why: 'over hits',              gameId: g1, market: 'total', kind: 'over',  selection: 'Over',  meta: { total: 45.5 }, expect: 'win'  },
+    { why: 'under misses',           gameId: g1, market: 'total', kind: 'under', selection: 'Under', meta: { total: 45.5 }, expect: 'loss' },
+    { why: 'total lands exactly',    gameId: g1, market: 'total', kind: 'over',  selection: 'Over',  meta: { total: 47   }, expect: 'push' },
+
+    // --- moneylines.
+    { why: 'moneyline winner',       gameId: g1, market: 'moneyline', kind: 'ml', selection: HA, meta: {}, expect: 'win'  },
+    { why: 'moneyline loser',        gameId: g1, market: 'moneyline', kind: 'ml', selection: AA, meta: {}, expect: 'loss' },
+    { why: 'moneyline on a tie',     gameId: g2, market: 'moneyline', kind: 'ml', selection: 'Selftest Home Bravo', meta: {}, expect: 'push' },
+
+    // --- everything below must be REFUSED, not guessed.
+    { why: 'game not finished',      gameId: g3, market: 'spread',    kind: 'favorite', selection: 'Selftest Home Delta', meta: { line: -3 }, expect: 'pending' },
+    { why: 'finished, no scores',    gameId: g4, market: 'moneyline', kind: 'ml',       selection: 'Selftest Home Echo',  meta: {},           expect: 'pending' },
+    { why: 'team name unrecognised', gameId: g1, market: 'moneyline', kind: 'ml',       selection: 'Zzz Nobody',          meta: {},           expect: 'pending' },
+    { why: 'spread with no line',    gameId: g1, market: 'spread',    kind: 'favorite', selection: HA,                    meta: {},           expect: 'pending' },
+    { why: 'total with no number',   gameId: g1, market: 'total',     kind: 'over',     selection: 'Over',                meta: {},           expect: 'pending' },
+    { why: 'unknown market',         gameId: g1, market: 'parlay',    kind: '',         selection: HA,                    meta: {},           expect: 'pending' }
+  ];
+}
+
+/** Remove every trace of a previous run. Returns how many rows went. */
+function selfTestCleanup_() {
+  let removed = 0;
+
+  const picks = openSheet_(PICKS_SHEET);
+  ensureHeaders_(picks, PICKS_HEADERS);
+  const pd = picks.getDataRange().getValues();
+  if (pd.length > 1) {
+    const H = headerIndex_(pd[0]);
+    for (let i = pd.length - 1; i >= 1; i--) {        // bottom-up: row numbers stay valid
+      if (String(pd[i][H.week] || '') === SELFTEST_WEEK) { picks.deleteRow(i + 1); removed++; }
+    }
+  }
+
+  const results = openSheet_(RESULTS_SHEET);
+  ensureHeaders_(results, RESULTS_HEADERS);
+  const rd = results.getDataRange().getValues();
+  if (rd.length > 1) {
+    const H = headerIndex_(rd[0]);
+    for (let i = rd.length - 1; i >= 1; i--) {
+      if (String(rd[i][H.gameId] || '').indexOf(SELFTEST_PREFIX) === 0) { results.deleteRow(i + 1); removed++; }
+    }
+  }
+  return removed;
+}
+
+/**
+ * Run this from the editor whenever you want to know grading still works.
+ * Returns a readable report; the execution log has the same thing.
+ */
+function runSelfTest() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) return 'FAILED: a grading run is in progress, try again in a minute';
+
+  try {
+    selfTestCleanup_();                    // in case an earlier run died halfway
+
+    const fixtures = selfTestPicks_();
+    upsertResults_(selfTestResults_());
+
+    const sh = openSheet_(PICKS_SHEET);
+    ensureHeaders_(sh, PICKS_HEADERS);
+    const rows = fixtures.map(function (p, i) {
+      return [
+        SELFTEST_PREFIX + i, SELFTEST_WEEK, SELFTEST_EMAIL, 'Selftest',
+        'NFL', p.gameId, 'selftest', p.market, p.kind, p.selection,
+        '', JSON.stringify(p.meta), 'pending', new Date()
+      ];
+    });
+    sh.getRange(sh.getLastRow() + 1, 1, rows.length, PICKS_HEADERS.length).setValues(rows);
+
+    // The real thing - the same function the six-hourly trigger calls.
+    const run = runAutoGrade_({ noFetch: true });
+
+    // Read back what it actually wrote.
+    const after = sh.getDataRange().getValues();
+    const H = headerIndex_(after[0]);
+    const got = {};
+    for (let i = 1; i < after.length; i++) {
+      if (String(after[i][H.week] || '') !== SELFTEST_WEEK) continue;
+      got[String(after[i][H.id])] = String(after[i][H.status] || '').toLowerCase();
+    }
+
+    const failures = [];
+    fixtures.forEach(function (p, i) {
+      const actual = got[SELFTEST_PREFIX + i];
+      if (actual !== p.expect) {
+        failures.push('  ' + p.market + ' / ' + p.why + ': expected ' + p.expect + ', got ' + actual);
+      }
+    });
+    if (run.creditsUsed !== 0) {
+      failures.push('  spent ' + run.creditsUsed + ' API credits - it should spend none');
+    }
+
+    const msg = failures.length
+      ? 'SELF TEST FAILED - ' + failures.length + ' of ' + fixtures.length + ' wrong:\n' + failures.join('\n')
+      : 'SELF TEST PASSED - all ' + fixtures.length + ' picks graded correctly, 0 API credits used.\n'
+        + '  graded ' + run.graded + ', left pending ' + run.stillPending + ' (both expected).';
+
+    Logger.log(msg);
+    return msg;
+  } finally {
+    selfTestCleanup_();                    // runs even if something threw
+    lock.releaseLock();
+  }
+}
+
+/**
+ * The other half: proves the Odds API key works and shows what the scores feed
+ * currently holds. Costs 1 credit (no daysFrom). Run it on a game day - out of
+ * season it will correctly report an empty feed, which is not a failure.
+ */
+function checkOddsApi() {
+  const out = [];
+  for (const league of ['NFL', 'NCAAF']) {
+    try {
+      const url = 'https://api.the-odds-api.com/v4/sports/' + leagueToSport_(league)
+        + '/scores/?dateFormat=iso&apiKey=' + encodeURIComponent(oddsApiKey_());
+      const res  = UrlFetchApp.fetch(url, { muteHttpExceptions: true, method: 'get' });
+      const code = res.getResponseCode();
+      if (code !== 200) {
+        out.push(league + ': HTTP ' + code + ' - ' + res.getContentText().slice(0, 200));
+        continue;
+      }
+
+      const games = JSON.parse(res.getContentText()) || [];
+      const done  = games.filter(function (g) { return g.completed; });
+      out.push(league + ': OK, ' + games.length + ' game(s) in the feed, ' + done.length + ' completed');
+      done.slice(0, 3).forEach(function (g) {
+        const s = (g.scores || []).map(function (x) { return x.name + ' ' + x.score; }).join(', ');
+        out.push('    ' + g.away_team + ' @ ' + g.home_team + ' - ' + (s || 'no scores') + '  [' + g.id + ']');
+      });
+      out.push('    credits left this month: ' + (res.getHeaders()['x-requests-remaining'] || 'unknown'));
+    } catch (e) {
+      out.push(league + ': FAILED - ' + e.message);
+    }
+  }
+  const msg = out.join('\n');
+  Logger.log(msg);
+  return msg;
 }
