@@ -218,7 +218,8 @@ function harness(sheets, props, scores) {
     migrateSheetsToPostgres, compareBackends, readPicks_, readResults_, readUsers_,
     pgReadPicks_, sheetReadPicks_, getBoard_, runAutoGrade_, runSelfTest,
     submitPicks_, getMyPicks_, isAdminEmail_, storageKind_, checkSetup,
-    upsertResults_, setPickStatuses_, gradePick_
+    upsertResults_, setPickStatuses_, gradePick_,
+    testAutoGradeLive, findFinishedGame_, livePicksFor_
   };`)(...names.map((n) => env[n]));
 
   return { api, pg, store, oddsCalls };
@@ -615,6 +616,98 @@ section("checkSetup names a property holding the wrong kind of value");
      (sw.match(/\d+ propert[^\n]*/) || [])[0]);
   ok(/that is a URL, not a key/.test(sw), "the key says it is a URL");
   ok(/expected the Project URL/.test(sw), "the URL says what it wanted");
+}
+
+// -------------------------------------------------------- live end-to-end
+// testAutoGradeLive is the only check that covers fetchScores_ and the
+// home/away mapping, so its own correctness matters. Here the "network" is the
+// fake odds feed, which is enough to exercise every branch.
+section("testAutoGradeLive grades against a real finished game");
+{
+  // Chiefs 31, Bills 17. Margin 14, total 48.
+  const LIVE = { NFL: [
+    { id: "live1", completed: false, home_team: KC, away_team: BUF, scores: null,
+      commence_time: "", last_update: "" },
+    { id: "live2", completed: true, home_team: KC, away_team: BUF,
+      scores: [{ name: KC, score: "31" }, { name: BUF, score: "17" }],
+      commence_time: "", last_update: "" }
+  ], NCAAF: [] };
+
+  const { api, pg } = harness({ Picks: SHEET_PICKS(), Results: SHEET_RESULTS(), Users: SHEET_USERS() },
+                              PG_ON, LIVE);
+  api.migrateSheetsToPostgres();
+  const before = pg.tables.picks.length;
+
+  const msg = api.testAutoGradeLive();
+  ok(/^LIVE TEST PASSED/.test(msg), "it passes against a real result", msg.split("\n")[0]);
+  ok(/all 8 picks graded correctly/.test(msg), "all eight fixtures", (msg.match(/all \d+ picks/) || [])[0]);
+  ok(/Buffalo Bills @ Kansas City Chiefs  31-17/.test(msg), "and names the game it used",
+     (msg.match(/Real game used[^\n]*/) || [])[0]);
+  ok(/\[live2\]/.test(msg), "skipping the unfinished one");
+  ok(pg.tables.picks.length === before, "cleaning up after itself", pg.tables.picks.length - before);
+}
+
+section("its expectations are derived from the score, not hardcoded");
+{
+  // A different score must produce different fixtures, or the test is a
+  // tautology that would pass against any game.
+  const score = (h, a) => ({ NFL: [{ id: "g", completed: true, home_team: KC, away_team: BUF,
+    scores: [{ name: KC, score: String(h) }, { name: BUF, score: String(a) }],
+    commence_time: "", last_update: "" }], NCAAF: [] });
+
+  const mk = (h, a) => {
+    const { api } = harness({ Picks: [HEAD], Results: [], Users: [["email","role"]] }, PG_ON, score(h, a));
+    return api.testAutoGradeLive();
+  };
+  const a = mk(31, 17), b = mk(20, 19);
+  ok(/^LIVE TEST PASSED/.test(a) && /^LIVE TEST PASSED/.test(b), "both pass",
+     a.split("\n")[0] + " | " + b.split("\n")[0]);
+  ok(/31-17/.test(a) && /20-19/.test(b), "against genuinely different games");
+
+  // The away team winning exercises the other half of the home/away mapping.
+  const away = mk(10, 24);
+  ok(/^LIVE TEST PASSED/.test(away), "and when the away team wins", away.split("\n")[0]);
+}
+
+section("out of season it says so rather than failing");
+{
+  const { api } = harness({ Picks: [HEAD], Results: [], Users: [["email","role"]] },
+                          PG_ON, { NFL: [], NCAAF: [] });
+  const msg = api.testAutoGradeLive();
+  ok(/No completed game in the feed/.test(msg), "an empty feed is not a failure", msg.split("\n")[0]);
+  ok(!/FAILED/.test(msg), "and is not reported as one");
+  ok(/expected, not a failure/.test(msg), "and says so in as many words");
+}
+
+section("a tied game is skipped, since it settles no moneyline");
+{
+  const tie = { NFL: [{ id: "tie", completed: true, home_team: KC, away_team: BUF,
+    scores: [{ name: KC, score: "21" }, { name: BUF, score: "21" }],
+    commence_time: "", last_update: "" }], NCAAF: [] };
+  const { api } = harness({ Picks: [HEAD], Results: [], Users: [["email","role"]] }, PG_ON, tie);
+  ok(/No completed game in the feed/.test(api.testAutoGradeLive()),
+     "it looks for a decisive result");
+}
+
+section("what a swapped feed can and cannot prove");
+{
+  // Worth being honest about the limit. The feed's score array names its teams,
+  // so a *consistently* swapped feed is just the same game seen from the other
+  // side and grades correctly — this test cannot detect that, and no test that
+  // derives its expectations from the feed could. What it does guarantee is
+  // that the score reported is the score graded from, so the two never drift.
+  const swapped = { NFL: [{ id: "sw", completed: true, home_team: KC, away_team: BUF,
+    // scores deliberately attributed to the wrong teams
+    scores: [{ name: KC, score: "17" }, { name: BUF, score: "31" }],
+    commence_time: "", last_update: "" }], NCAAF: [] };
+  const { api } = harness({ Picks: [HEAD], Results: [], Users: [["email","role"]] }, PG_ON, swapped);
+  const msg = api.testAutoGradeLive();
+  // Expectations follow the score, so a consistent swap still grades correctly —
+  // it is the same game seen from the other side. What must hold is that the
+  // winner it names matches the scores it read.
+  ok(/^LIVE TEST PASSED/.test(msg), "a consistently swapped feed is still self-consistent");
+  ok(/17-31/.test(msg), "and the score it reports is the one it graded from",
+     (msg.match(/Real game used[^\n]*/) || [])[0]);
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

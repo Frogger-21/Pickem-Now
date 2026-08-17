@@ -2036,3 +2036,138 @@ function compareBackends() {
   Logger.log(msg);
   return msg;
 }
+
+// ===== LIVE END-TO-END TEST ==================================================
+// runSelfTest proves the grading rules and the database write-back, but it
+// feeds itself invented scores, so the one thing it cannot cover is the part
+// that talks to the network: fetchScores_, the event-id join, and the mapping
+// of the feed's score array onto home and away.
+//
+// This closes that gap using a real game that has actually finished. It finds
+// one in the live feed, invents picks whose correct verdicts are arithmetic
+// from the real final score, runs the real autoGrade(), checks every verdict
+// and deletes what it made.
+//
+// Costs a handful of API credits — one discovery call plus whatever autoGrade
+// spends. Run it once to gain confidence, not on a schedule.
+
+/** A completed game from the live feed, or null out of season. */
+function findFinishedGame_() {
+  for (const league of ['NFL', 'NCAAF']) {
+    let games = [];
+    try { games = fetchScores_(league, null); } catch (e) { continue; }
+    for (const g of games) {
+      const hs = num_(g.homeScore), as = num_(g.awayScore);
+      // A tie settles nothing on the moneyline, so prefer a decisive result.
+      if (g.completed && isFinite(hs) && isFinite(as) && hs !== as) {
+        return { league: league, game: g, homeScore: hs, awayScore: as };
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Picks whose right answers follow from the real score, so the expectations
+ * cannot drift from reality the way a hardcoded fixture can.
+ */
+function livePicksFor_(found) {
+  const g = found.game, hs = found.homeScore, as = found.awayScore;
+  const homeWon = hs > as;
+  const winner  = homeWon ? g.home_team : g.away_team;
+  const loser   = homeWon ? g.away_team : g.home_team;
+  const margin  = Math.abs(hs - as);
+  const total   = hs + as;
+
+  return [
+    { why: 'moneyline on the winner',      market: 'moneyline', kind: 'ml',
+      selection: winner, meta: {}, expect: 'win' },
+    { why: 'moneyline on the loser',       market: 'moneyline', kind: 'ml',
+      selection: loser,  meta: {}, expect: 'loss' },
+
+    // The winner covers a number half a point short of the real margin and
+    // fails to cover one half a point beyond it.
+    { why: 'winner covers ' + (margin - 0.5), market: 'spread', kind: 'favorite',
+      selection: winner, meta: { line: -(margin - 0.5) }, expect: 'win' },
+    { why: 'winner misses ' + (margin + 0.5), market: 'spread', kind: 'favorite',
+      selection: winner, meta: { line: -(margin + 0.5) }, expect: 'loss' },
+    { why: 'loser covers +' + (margin + 0.5), market: 'spread', kind: 'underdog',
+      selection: loser,  meta: { line: (margin + 0.5) },  expect: 'win' },
+
+    { why: 'over ' + (total - 0.5),  market: 'total', kind: 'over',
+      selection: 'Over',  meta: { total: total - 0.5 }, expect: 'win' },
+    { why: 'under ' + (total - 0.5), market: 'total', kind: 'under',
+      selection: 'Under', meta: { total: total - 0.5 }, expect: 'loss' },
+    { why: 'total lands on ' + total, market: 'total', kind: 'over',
+      selection: 'Over',  meta: { total: total },       expect: 'push' }
+  ];
+}
+
+/**
+ * The end-to-end check. Run from the editor when games have been played in the
+ * last three days.
+ */
+function testAutoGradeLive() {
+  const found = findFinishedGame_();
+  if (!found) {
+    const msg = 'No completed game in the feed right now (daysFrom maxes at 3).\n'
+      + '  Out of season this is expected, not a failure. Try again on a game day —\n'
+      + '  checkOddsApi() shows what the feed currently holds.';
+    Logger.log(msg);
+    return msg;
+  }
+
+  const g = found.game;
+  const label = g.away_team + ' @ ' + g.home_team + '  '
+    + found.homeScore + '-' + found.awayScore + '  [' + g.gameId + ']';
+
+  try {
+    selfTestCleanup_();                 // clear anything a previous run left
+
+    const fixtures = livePicksFor_(found);
+    insertPicks_(fixtures.map(function (p, i) {
+      return {
+        id: SELFTEST_PREFIX + 'live_' + i, week: SELFTEST_WEEK, email: SELFTEST_EMAIL,
+        user: 'Selftest', league: found.league, gameId: g.gameId,
+        matchup: g.away_team + ' @ ' + g.home_team,
+        market: p.market, kind: p.kind, selection: p.selection,
+        odds: '', meta: JSON.stringify(p.meta), status: 'pending', ts: new Date()
+      };
+    }));
+
+    // The real thing, network and all — the same call the trigger makes. The
+    // result cache is deliberately not pre-filled, so this has to go and get
+    // the score itself.
+    const run = autoGrade();
+
+    const got = {};
+    for (const p of readPicks_()) {
+      if (p.week === SELFTEST_WEEK) got[p.id] = p.status;
+    }
+
+    const failures = [];
+    fixtures.forEach(function (p, i) {
+      const actual = got[SELFTEST_PREFIX + 'live_' + i];
+      if (actual !== p.expect) {
+        failures.push('  ' + p.market + ' / ' + p.why + ': expected ' + p.expect + ', got ' + actual);
+      }
+    });
+
+    const head = 'Real game used: ' + label;
+    const msg = failures.length
+      ? 'LIVE TEST FAILED - ' + failures.length + ' of ' + fixtures.length + ' wrong\n'
+        + head + '\n' + failures.join('\n')
+        + '\n\nThe scores came back from the API, so this is a grading or a name-matching\n'
+        + 'problem rather than a connection one.'
+      : 'LIVE TEST PASSED - all ' + fixtures.length + ' picks graded correctly against a real game.\n'
+        + head + '\n'
+        + '  credits used this run: ' + (run && run.creditsUsed !== undefined ? run.creditsUsed : '?') + '\n'
+        + '  This is the only check that covers fetchScores_, the event-id join and\n'
+        + '  the home/away mapping. Auto-grading is working end to end.';
+
+    Logger.log(msg);
+    return msg;
+  } finally {
+    selfTestCleanup_();
+  }
+}

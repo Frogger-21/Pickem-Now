@@ -102,6 +102,26 @@ the API key works and printing what the scores feed currently holds plus your
 remaining credits. Out of season it reports an empty feed; that's a pass, not a
 failure. Run it on a game day to see real games and their event ids.
 
+**`testAutoGradeLive()`** — the one that joins the two together. `runSelfTest`
+feeds itself invented scores, so it never exercises `fetchScores_`, the
+event-id join, or the mapping of the feed's score array onto home and away.
+This finds a genuinely finished game in the live feed, invents picks whose
+correct verdicts are *arithmetic from the real final score*, runs the real
+`autoGrade()` — network and all — checks every verdict and deletes what it
+made.
+
+Because the expectations are derived from the score rather than hardcoded, it
+can't degrade into a tautology that would pass against any game. It skips tied
+games, which settle no moneyline, and out of season it reports an empty feed as
+expected rather than as a failure.
+
+Costs a handful of credits, so run it once for confidence, not on a schedule.
+
+> Its honest limit: a feed that swapped home and away *consistently* is just
+> the same game seen from the other side, and no test deriving expectations
+> from that feed could notice. What is guaranteed is that the score it reports
+> is the score it graded from, so the two can never drift apart.
+
 If the self-test ever dies before cleaning up, its rows carry the week
 `__selftest__`, which the scoreboard ignores outright — a half-finished test
 can't put a fake player on the board. Running it again clears the leftovers.
@@ -341,7 +361,7 @@ node tools/grading-test.js    # 48 assertions: spreads, totals, moneylines, edge
 node tools/pipeline-test.js   # 60 assertions: full runs against a fake Sheet, plus layering
 node tools/build-test.js      # 11 assertions: the real Netlify build
 node tools/backtest-test.js   # 42 assertions: the audit and the backtest
-node tools/postgres-test.js   # 67 assertions: the whole stack on a fake PostgREST
+node tools/postgres-test.js   # 98 assertions: the whole stack on a fake PostgREST
 ```
 
 `pipeline-test.js` builds a fake spreadsheet and a fake Odds API, then checks
