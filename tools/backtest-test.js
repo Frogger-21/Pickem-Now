@@ -67,7 +67,7 @@ function load(pickRows) {
   };
   const names = Object.keys(env);
   return new Function(...names,
-    SRC + "return { auditGrades, backtestWeek, backtestTemplate, splitMatchup_, readWeekPicks_ };"
+    SRC + "return { auditGrades, backtestWeek, backtestTemplate, splitMatchup_, readWeekPicks_, weekKey_, getWeeks_ };"
   )(...names.map((n) => env[n]));
 }
 
@@ -282,6 +282,52 @@ section("splitMatchup_ reads the frontend's format");
   ok(s && s.home === "Kansas City Chiefs", "home team is second", s && s.home);
   ok(api.splitMatchup_("Bills vs Chiefs") === null, "anything else is refused");
   ok(api.splitMatchup_("") === null, "blank is refused");
+}
+
+// ---------------------------------------------------------------- week order
+// The Sheet's week column was a date cell, so it stringified to "Wed Sep 24
+// 2025 00:00:00 GMT-0500 (Central Daylight Time)". Sorted as text that orders
+// by day name and then month name, which put September above October in the
+// week dropdown for the whole of last season.
+section("weeks come back newest first, whatever the label looks like");
+{
+  const api = load([HEAD]);
+  const k = api.weekKey_;
+
+  ok(k("Wed Sep 24 2025 00:00:00 GMT-0500 (Central Daylight Time)") === "2025-09-24",
+     "a stringified Date becomes a sortable key", k("Wed Sep 24 2025 00:00:00 GMT-0500 (CDT)"));
+  ok(k("2025-09-24") === "2025-09-24", "an ISO date is already one");
+  ok(k("2025-09-24T00:00:00Z") === "2025-09-24", "an ISO timestamp is trimmed to the date");
+  ok(k("Sep 24 2025") === "2025-09-24", "with or without the day name");
+  ok(k("9/24/2025") === "2025-09-24", "and a US-format date");
+  ok(k("Wed Oct 08 2025 00:00:00") === "2025-10-08", "single-digit days are padded");
+  ok(k("Week 3") === "Week 3", "an unrecognised label sorts as itself rather than being guessed at");
+  ok(k("") === "" && k(null) === "", "blank stays blank");
+
+  // Parsed by pattern, not through Date: new Date() on a midnight-with-offset
+  // string re-interprets it in the local zone and can land on the day before.
+  ok(k("Wed Jan 01 2026 00:00:00 GMT-0600 (Central Standard Time)") === "2026-01-01",
+     "midnight with an offset does not slip a day",
+     k("Wed Jan 01 2026 00:00:00 GMT-0600 (CST)"));
+}
+
+section("the dropdown order is actually chronological");
+{
+  const D = (s) => s;   // labels exactly as the Sheet produced them
+  const rows = [HEAD];
+  let i = 0;
+  for (const wk of ["Wed Sep 03 2025 00:00:00 GMT-0500 (Central Daylight Time)",
+                    "Wed Oct 08 2025 00:00:00 GMT-0500 (Central Daylight Time)",
+                    "Wed Nov 12 2025 00:00:00 GMT-0600 (Central Standard Time)",
+                    "Wed Sep 24 2025 00:00:00 GMT-0500 (Central Daylight Time)"]) {
+    rows.push(["w" + (++i), D(wk), "a@x.com", "Ann", "NFL", "g" + i, M,
+               "moneyline", "ml", KC, "", "{}", "win", ""]);
+  }
+  const weeks = load(rows).getWeeks_().map((w) => w.week.slice(4, 15));
+  ok(weeks[0].indexOf("Nov 12") === 0, "newest week first", weeks.join(" | "));
+  ok(weeks[3].indexOf("Sep 03") === 0, "oldest week last", weeks.join(" | "));
+  ok(weeks[1].indexOf("Oct 08") === 0 && weeks[2].indexOf("Sep 24") === 0,
+     "and the middle is right too", weeks.join(" | "));
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

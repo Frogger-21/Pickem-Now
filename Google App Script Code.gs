@@ -644,17 +644,31 @@ function pgReadUsers_() {
 
 // ===== HTTP HANDLERS =========================================================
 // GET: odds (league=nfl|ncaaf[,nocache=1]), mine (email), board, isAdmin (email)
+const GET_FNS = ['odds', 'mine', 'board', 'weeks', 'week', 'isAdmin'];
+
 function doGet(e) {
   e = e || {};
   const p = e.parameter || {};
   try {
+    // Opening the /exec URL in a browser sends no parameters. Answering that
+    // with "Unknown fn" reads like a broken deployment when it is really just
+    // a request that asked for nothing, so say what this is instead.
+    if (!p.fn) {
+      return asJson(ok({
+        service: 'Pickem Now API',
+        storage: storageKind_(),
+        usage:   'add ?fn=<name> to this URL',
+        fn:      GET_FNS,
+        example: 'https://…/exec?fn=board'
+      }));
+    }
     if (p.fn === 'odds')    return asJson(ok(getOdds_(String(p.league || ''), p.weekStart, { noCache: String(p.nocache) === '1' })));
     if (p.fn === 'mine')    return asJson(ok({ picks: getMyPicks_(String(p.email || '')) }));
     if (p.fn === 'board')   return asJson(ok({ rows: getBoard_() }));
     if (p.fn === 'weeks')   return asJson(ok({ weeks: getWeeks_() }));
     if (p.fn === 'week')    return asJson(ok(getWeek_(String(p.week || ''))));
     if (p.fn === 'isAdmin') return asJson(ok({ admin: isAdminEmail_(String(p.email || '')) }));
-    return asJson(err('Unknown fn'));
+    return asJson(err('Unknown fn "' + p.fn + '". Valid: ' + GET_FNS.join(', ')));
   } catch (error) {
     return asJson(err(String(error)));
   }
@@ -1324,10 +1338,50 @@ function getBoard_() {
       a.user.localeCompare(b.user));
 }
 
+const MONTH_NUM = { jan:'01', feb:'02', mar:'03', apr:'04', may:'05', jun:'06',
+                    jul:'07', aug:'08', sep:'09', oct:'10', nov:'11', dec:'12' };
+
+/**
+ * A sortable YYYY-MM-DD key for a week label.
+ *
+ * The Sheet's week column was a date cell, so it stringified into things like
+ * "Wed Sep 24 2025 00:00:00 GMT-0500 (Central Daylight Time)". Sorting those
+ * as text orders them by day name and then month name, which is how the week
+ * dropdown ended up showing September above October.
+ *
+ * Parsed by pattern rather than through Date, deliberately: `new Date(str)`
+ * would re-interpret the offset in the script's timezone and can land a
+ * midnight date on the previous day.
+ */
+function weekKey_(v) {
+  const s = String(v || '').trim();
+  if (!s) return '';
+
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return iso[1] + '-' + iso[2] + '-' + iso[3];
+
+  // "Wed Sep 24 2025 ..." and "Sep 24 2025 ..."
+  const m = s.match(/^(?:\w{3}\s+)?(\w{3})\s+(\d{1,2})\s+(\d{4})/);
+  if (m) {
+    const mo = MONTH_NUM[m[1].toLowerCase()];
+    if (mo) return m[3] + '-' + mo + '-' + ('0' + m[2]).slice(-2);
+  }
+
+  const us = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);      // 9/24/2025
+  if (us) return us[3] + '-' + ('0' + us[1]).slice(-2) + '-' + ('0' + us[2]).slice(-2);
+
+  return s;   // unrecognised: sort it as itself rather than guess
+}
+
 /** Every week that has picks, newest first. */
 function getWeeks_() {
   const { weeks } = tallies_();
-  return Object.keys(weeks).filter(Boolean).sort().reverse().map(wk => {
+  return Object.keys(weeks).filter(Boolean)
+    .sort(function (a, b) {
+      const ka = weekKey_(a), kb = weekKey_(b);
+      return ka < kb ? 1 : ka > kb ? -1 : 0;      // newest first
+    })
+    .map(wk => {
     const w = weekWinners_(weeks[wk]);
     return { week: wk, decided: w.decided, winners: w.winners, players: Object.keys(weeks[wk]).length };
   });
