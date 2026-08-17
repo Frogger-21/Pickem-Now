@@ -54,6 +54,9 @@ $$;
 
 -- ---------------------------------------------------------------- tables
 
+-- Note for the migration: the Users sheet holds free text, so roles arrive as
+-- '', 'Admin', ' admin ' and so on. They must be trimmed, lowercased and
+-- defaulted to 'player' on the way in or this constraint rejects them.
 create table if not exists users (
   email      text primary key,
   role       text not null default 'player'
@@ -87,6 +90,8 @@ create table if not exists picks (
   selection  text,
   odds       numeric,
   meta       jsonb not null default '{}'::jsonb,
+  -- An ungraded pick is the empty string in the sheet, not 'pending'. The
+  -- migration has to map '' onto 'pending' or every ungraded row is rejected.
   status     text not null default 'pending'
              check (status in ('pending', 'win', 'loss', 'push')),
   created_at timestamptz not null default now(),
@@ -212,3 +217,34 @@ create or replace view picks_with_results as
 alter table picks   enable row level security;
 alter table results enable row level security;
 alter table users   enable row level security;
+
+-- Privileges, stated outright rather than inherited.
+--
+-- The project is created with "automatically expose new tables" off, which is
+-- the right setting — it means nothing reaches the Data API by accident. But
+-- it also means default privileges will not hand these tables to anybody, so
+-- the grants have to be explicit or PostgREST returns 404 for tables that
+-- plainly exist. That failure looks like a missing table and wastes an hour.
+--
+-- Guarded by role existence so this file also runs on a plain Postgres that
+-- has never heard of Supabase's roles.
+do $$
+declare
+  r record;
+begin
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    execute 'grant usage on schema public to service_role';
+    execute 'grant all privileges on all tables in schema public to service_role';
+    execute 'grant all privileges on all sequences in schema public to service_role';
+    execute 'grant execute on all functions in schema public to service_role';
+  end if;
+
+  -- Belt and braces: whatever the project defaults were, the public roles get
+  -- nothing. Every request arrives as service_role from Apps Script.
+  for r in select rolname from pg_roles where rolname in ('anon', 'authenticated')
+  loop
+    execute format('revoke all on all tables in schema public from %I', r.rolname);
+    execute format('revoke all on all sequences in schema public from %I', r.rolname);
+  end loop;
+end
+$$;
