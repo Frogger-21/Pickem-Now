@@ -33,8 +33,42 @@ function oddsApiKey_() { return requireProp_('ODDS_API_KEY'); }
 function sheetId_()    { return requireProp_('SHEET_ID'); }
 
 /** Run this from the editor after setup. Never prints the secrets themselves. */
+/**
+ * Catch a property whose value is the wrong *kind* of thing.
+ *
+ * These all live in one list in one settings page, and pasting the web app URL
+ * into SHEET_ID produces "Illegal spreadsheet id or key" from deep inside
+ * SpreadsheetApp — accurate, but it names neither the property nor what a
+ * right answer looks like.
+ */
+function propWarning_(key, v) {
+  if (!v) return null;
+  const looksLikeUrl = /^https?:\/\//i.test(v);
+
+  if (key === 'SHEET_ID') {
+    if (looksLikeUrl || v.indexOf('/') >= 0) {
+      return 'that is a URL. SHEET_ID is only the middle of the Sheet\'s address — '
+        + 'the part between /d/ and /edit, around 44 characters, no slashes.';
+    }
+    if (v.length < 20) return 'too short for a Sheet ID (expect around 44 characters).';
+  }
+  if (key === 'SUPABASE_URL') {
+    if (!/^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(v)) {
+      return 'expected the Project URL, like https://abcdefgh.supabase.co '
+        + '(Supabase > Settings > API).';
+    }
+  }
+  if (key === 'SUPABASE_SERVICE_KEY') {
+    if (looksLikeUrl) return 'that is a URL, not a key.';
+    if (v.length < 40) return 'too short for a service_role key.';
+  }
+  if (key === 'ODDS_API_KEY' && looksLikeUrl) return 'that is a URL, not a key.';
+  return null;
+}
+
 function checkSetup() {
   const out = [];
+  let bad = 0;
   for (const k of ['ODDS_API_KEY', 'SHEET_ID', 'SUPABASE_URL', 'SUPABASE_SERVICE_KEY']) {
     const v = props_().getProperty(k);
     // The URL is not a secret and is worth seeing; the keys are, so only their
@@ -42,6 +76,8 @@ function checkSetup() {
     const shown = !v ? 'MISSING'
       : (k === 'SUPABASE_URL' ? v : 'set (' + v.length + ' chars)');
     out.push(k.padEnd(21) + ': ' + shown);
+    const warn = propWarning_(k, v);
+    if (warn) { out.push(''.padEnd(21) + '  ^^ WRONG VALUE — ' + warn); bad++; }
   }
 
   let kind = '(invalid)';
@@ -68,6 +104,14 @@ function checkSetup() {
     }
   } else {
     out.push('Postgres  : not configured');
+  }
+
+  if (bad) {
+    out.push('');
+    out.push(bad === 1
+      ? '1 property has the wrong kind of value in it — fix that before anything'
+      : bad + ' properties have the wrong kind of value in them — fix those before anything');
+    out.push('else. Project Settings > Script Properties.');
   }
 
   const msg = out.join('\n');

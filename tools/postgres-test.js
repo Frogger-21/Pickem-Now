@@ -520,5 +520,39 @@ section("checkSetup reports both backends without printing secrets");
   ok(/Postgres  : reachable/.test(msg), "and it is actually contacted");
 }
 
+section("checkSetup names a property holding the wrong kind of value");
+{
+  // The real mistake this exists for: the whole Sheets URL pasted into
+  // SHEET_ID, which surfaces from SpreadsheetApp as "Illegal spreadsheet id or
+  // key" — accurate, but it names neither the property nor a right answer.
+  const bad = {
+    ...PG_ON,
+    SUPABASE_SERVICE_KEY: "x".repeat(64),      // valid, so SHEET_ID is the only fault
+    SHEET_ID: "https://docs.google.com/spreadsheets/d/1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcd/edit#gid=0"
+  };
+  const msg = harness({}, bad).api.checkSetup();
+  ok(/SHEET_ID[^\n]*\n\s+\^\^ WRONG VALUE/.test(msg), "the bad one is flagged where it sits",
+     (msg.match(/\^\^ WRONG VALUE[^\n]*/) || [])[0]);
+  ok(/between \/d\/ and \/edit/.test(msg), "and says what a right answer looks like");
+  ok(/1 property has the wrong kind of value/.test(msg), "and it is counted at the end");
+
+  // A correct set raises nothing.
+  const good = { ...PG_ON, SHEET_ID: "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcd",
+                 SUPABASE_SERVICE_KEY: "x".repeat(64) };
+  const clean = harness({}, good).api.checkSetup();
+  ok(!/WRONG VALUE/.test(clean), "correct values are not nagged about",
+     (clean.match(/\^\^[^\n]*/) || [])[0]);
+
+  // Keys and URLs swapped round is the other easy slip.
+  const swapped = { ...PG_ON, SHEET_ID: "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcd",
+                    SUPABASE_URL: "eyJhbGciOiJI-not-a-url",
+                    SUPABASE_SERVICE_KEY: "https://glvmnlnqvugkebdeqvxh.supabase.co" };
+  const sw = harness({}, swapped).api.checkSetup();
+  ok(/2 propert/.test(sw) || /2 property/.test(sw), "both halves of a swap are caught",
+     (sw.match(/\d+ propert[^\n]*/) || [])[0]);
+  ok(/that is a URL, not a key/.test(sw), "the key says it is a URL");
+  ok(/expected the Project URL/.test(sw), "the URL says what it wanted");
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);
