@@ -49,7 +49,11 @@ class FakeSheet {
 function load(pickRows) {
   const store = { Picks: new FakeSheet("Picks", pickRows), Results: new FakeSheet("Results", []) };
   const env = {
-    PropertiesService: { getScriptProperties: () => ({ getProperty: () => "x" }) },
+    PropertiesService: { getScriptProperties: () => ({
+      // STORAGE must be absent so it defaults to sheets; a catch-all "x" here
+      // is a nonsense backend name and storageKind_ rightly refuses it.
+      getProperty: (k) => (k === "STORAGE" ? null : "x")
+    }) },
     SpreadsheetApp: { openById: () => ({
       getName: () => "test",
       getSheetByName: (n) => store[n] || null,

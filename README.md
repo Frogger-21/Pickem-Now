@@ -213,8 +213,53 @@ one convenient `getDataRange()` at a time.
 
 ## Moving to Postgres
 
-`db/schema.sql` is the target schema — paste it into the Supabase SQL editor
-and run it. It's idempotent.
+### The cutover, in order
+
+```
+1. run db/schema.sql in the Supabase SQL editor
+2. add SUPABASE_URL and SUPABASE_SERVICE_KEY to Script Properties
+3. checkSetup()                — are both backends reachable?
+4. migrateSheetsToPostgres()   — copies everything; safe to re-run
+5. compareBackends()           — do they agree, row for row?
+6. Script Property STORAGE = postgres     ← the cutover
+7. runSelfTest()               — grading still correct on the new backend
+```
+
+The Sheet is never modified, by any step. Step 6 is one property, so the
+rollback is deleting it.
+
+`STORAGE` defaults to `sheets` when unset, so a half-finished setup can't
+silently point a working league at an empty database, and any value other than
+`sheets` or `postgres` is refused rather than guessed at.
+
+**`migrateSheetsToPostgres()`** is idempotent — every write is an upsert on the
+primary key, so running it twice is the same as running it once, and running it
+again later picks up whatever was added since. It handles the three things that
+would otherwise fail on arrival:
+
+- an ungraded pick is `''` in the Sheet and must become `'pending'`
+- `meta` is a JSON *string* in the Sheet and must arrive as an object, or jsonb
+  stores a quoted string and `line` disappears
+- roles are free text (`'Admin'`, `''`) and the column is constrained
+
+It aborts without writing anything if two picks share an id, since upserting
+those would silently merge two people's picks into one row. Legacy rows with no
+id at all get one minted from their row number, and it says how many.
+
+If Postgres rejects a row, the migration **re-sends that batch one row at a
+time to find out which**, and reports it by id with the constraint that refused
+it. Postgres names the constraint, not the row; during a migration that's the
+difference between a one-line fix and an afternoon.
+
+**`compareBackends()`** reads both and reports every difference — pick counts,
+field-by-field values, `meta.line` and `meta.total`, result scores, and finally
+whether the *scoreboard* comes out the same. It changes nothing. Only when it
+says `IDENTICAL` is step 6 worth doing.
+
+### The schema
+
+`db/schema.sql` is the target — paste it into the Supabase SQL editor and run
+it. It's idempotent.
 
 Two decisions in it worth knowing. `meta` stays `jsonb` rather than being
 flattened into columns, because the grader reads it as a blob and flattening
@@ -296,6 +341,7 @@ node tools/grading-test.js    # 48 assertions: spreads, totals, moneylines, edge
 node tools/pipeline-test.js   # 60 assertions: full runs against a fake Sheet, plus layering
 node tools/build-test.js      # 11 assertions: the real Netlify build
 node tools/backtest-test.js   # 42 assertions: the audit and the backtest
+node tools/postgres-test.js   # 67 assertions: the whole stack on a fake PostgREST
 ```
 
 `pipeline-test.js` builds a fake spreadsheet and a fake Odds API, then checks
@@ -303,6 +349,11 @@ that grades land on the right rows, that the credit short-circuits fire, and
 that resubmitting replaces rather than duplicates. It also runs `runSelfTest()`
 itself, so a broken self-test shows up on the laptop rather than halfway
 through a football Sunday.
+
+`postgres-test.js` runs the backend against a fake PostgREST that enforces the
+schema's constraints, then against a fake Sheet, and checks the two produce the
+same scoreboard. The constraints are the point: the traps in this migration are
+constraint traps, so a fake that accepted anything would prove nothing.
 
 `backtest-test.js` spends most of its effort on the *quiet* direction — proving
 `auditGrades()` stays silent on grades that are legitimately consistent. A

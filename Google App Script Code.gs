@@ -35,16 +35,41 @@ function sheetId_()    { return requireProp_('SHEET_ID'); }
 /** Run this from the editor after setup. Never prints the secrets themselves. */
 function checkSetup() {
   const out = [];
-  for (const k of ['ODDS_API_KEY', 'SHEET_ID']) {
+  for (const k of ['ODDS_API_KEY', 'SHEET_ID', 'SUPABASE_URL', 'SUPABASE_SERVICE_KEY']) {
     const v = props_().getProperty(k);
-    out.push(k + ': ' + (v ? 'set (' + v.length + ' chars)' : 'MISSING'));
+    // The URL is not a secret and is worth seeing; the keys are, so only their
+    // length is ever printed.
+    const shown = !v ? 'MISSING'
+      : (k === 'SUPABASE_URL' ? v : 'set (' + v.length + ' chars)');
+    out.push(k.padEnd(21) + ': ' + shown);
   }
+
+  let kind = '(invalid)';
+  try { kind = storageKind_(); } catch (e) { kind = e.message; }
+  out.push('STORAGE'.padEnd(21) + ': ' + kind + (props_().getProperty('STORAGE') ? '' : '  (unset, defaulting to sheets)'));
+
+  out.push('');
   try {
     const ss = SpreadsheetApp.openById(sheetId_());
-    out.push('Sheet opens OK: "' + ss.getName() + '"');
+    out.push('Sheet     : opens OK, "' + ss.getName() + '", '
+      + sheetReadPicks_().length + ' pick row(s)');
   } catch (e) {
-    out.push('Sheet FAILED to open: ' + e.message);
+    out.push('Sheet     : FAILED — ' + e.message);
   }
+
+  if (props_().getProperty('SUPABASE_URL')) {
+    try {
+      // head=true asks PostgREST for a count without shipping any rows.
+      const n = pgFetch_('get', 'picks?select=id&limit=1');
+      out.push('Postgres  : reachable, picks table readable'
+        + (n && n.length ? '' : ' (currently empty)'));
+    } catch (e) {
+      out.push('Postgres  : FAILED — ' + e.message);
+    }
+  } else {
+    out.push('Postgres  : not configured');
+  }
+
   const msg = out.join('\n');
   Logger.log(msg);
   return msg;
@@ -73,6 +98,36 @@ const RESULTS_HEADERS = [
 ];
 
 const USERS_SHEET = 'Users';
+
+// ---------------------------------------------------------------- dispatch
+// Which backend is live. Default 'sheets' so an unset property cannot silently
+// point a working league at an empty database. Flipping this property is the
+// entire cutover, and flipping it back is the entire rollback.
+function storageKind_() {
+  const v = String(props_().getProperty('STORAGE') || 'sheets').trim().toLowerCase();
+  if (v !== 'sheets' && v !== 'postgres') {
+    throw new Error('Script Property STORAGE must be "sheets" or "postgres", not "' + v + '".');
+  }
+  return v;
+}
+
+function usingPostgres_() { return storageKind_() === 'postgres'; }
+
+function readPicks_()               { return usingPostgres_() ? pgReadPicks_()               : sheetReadPicks_(); }
+function setPickStatuses_(updates)  { if (!updates || !updates.length) return 0;
+                                      return usingPostgres_() ? pgSetPickStatuses_(updates)  : sheetSetPickStatuses_(updates); }
+function insertPicks_(picks)        { if (!picks || !picks.length) return 0;
+                                      return usingPostgres_() ? pgInsertPicks_(picks)        : sheetInsertPicks_(picks); }
+function deletePickKeys_(keys)      { if (!keys || !keys.length) return 0;
+                                      return usingPostgres_() ? pgDeletePickKeys_(keys)      : sheetDeletePickKeys_(keys); }
+function readResults_()             { return usingPostgres_() ? pgReadResults_()             : sheetReadResults_(); }
+function upsertResults_(rows)       { if (!rows || !rows.length) return 0;
+                                      return usingPostgres_() ? pgUpsertResults_(rows)       : sheetUpsertResults_(rows); }
+function deleteResultIds_(ids)      { if (!ids || !ids.length) return 0;
+                                      return usingPostgres_() ? pgDeleteResultIds_(ids)      : sheetDeleteResultIds_(ids); }
+function readUsers_()               { return usingPostgres_() ? pgReadUsers_()               : sheetReadUsers_(); }
+
+// ---------------------------------------------------------------- sheets
 
 /**
  * One sheet row as a pick object. `meta` and `odds` are deliberately left
@@ -103,7 +158,7 @@ function pickFromRow_(row, H, key) {
 /** Every pick, in sheet order. Blank trailing rows come back too; callers
     filter on what they care about, exactly as they did when they read the
     grid themselves. */
-function readPicks_() {
+function sheetReadPicks_() {
   const sh = openSheet_(PICKS_SHEET);
   ensureHeaders_(sh, PICKS_HEADERS);
   const data = sh.getDataRange().getValues();
@@ -121,7 +176,7 @@ function readPicks_() {
  * cell — a Sunday with forty pending picks would otherwise be forty round
  * trips to Sheets, which is slow enough to hit the script time limit.
  */
-function setPickStatuses_(updates) {
+function sheetSetPickStatuses_(updates) {
   if (!updates || !updates.length) return 0;
   const sh = openSheet_(PICKS_SHEET);
   const data = sh.getDataRange().getValues();
@@ -140,7 +195,7 @@ function setPickStatuses_(updates) {
 }
 
 /** Append picks. Objects in, not rows. */
-function insertPicks_(picks) {
+function sheetInsertPicks_(picks) {
   if (!picks || !picks.length) return 0;
   const sh = openSheet_(PICKS_SHEET);
   ensureHeaders_(sh, PICKS_HEADERS);
@@ -155,7 +210,7 @@ function insertPicks_(picks) {
 }
 
 /** Delete picks by key. Bottom-up, so the earlier row numbers stay valid. */
-function deletePickKeys_(keys) {
+function sheetDeletePickKeys_(keys) {
   if (!keys || !keys.length) return 0;
   const sh = openSheet_(PICKS_SHEET);
   const sorted = keys.slice().sort(function (a, b) { return b - a; });
@@ -164,7 +219,7 @@ function deletePickKeys_(keys) {
 }
 
 /** Cached results keyed by gameId. */
-function readResults_() {
+function sheetReadResults_() {
   const sh = openSheet_(RESULTS_SHEET);
   ensureHeaders_(sh, RESULTS_HEADERS);
   const data = sh.getDataRange().getValues();
@@ -189,11 +244,11 @@ function readResults_() {
 }
 
 /** Insert or update cached results. */
-function upsertResults_(rows) {
+function sheetUpsertResults_(rows) {
   if (!rows || !rows.length) return 0;
   const sh = openSheet_(RESULTS_SHEET);
   ensureHeaders_(sh, RESULTS_HEADERS);
-  const existing = readResults_();
+  const existing = sheetReadResults_();
   const now = new Date();
   const appends = [];
   for (const r of rows) {
@@ -214,7 +269,7 @@ function upsertResults_(rows) {
 }
 
 /** Delete cached results by gameId. */
-function deleteResultIds_(ids) {
+function sheetDeleteResultIds_(ids) {
   if (!ids || !ids.length) return 0;
   const want = {};
   for (const id of ids) want[id] = true;
@@ -230,7 +285,7 @@ function deleteResultIds_(ids) {
 }
 
 /** [{ email, role }]. */
-function readUsers_() {
+function sheetReadUsers_() {
   const sh = openSheet_(USERS_SHEET);
   const data = sh.getDataRange().getValues();
   if (!data || data.length < 2) return [];
@@ -244,6 +299,255 @@ function readUsers_() {
     });
   }
   return out;
+}
+
+// ===== POSTGRES (Supabase / PostgREST) =======================================
+// The other implementation of the interface above. The browser never reaches
+// this — it talks to Apps Script, which holds the service key — so the key
+// lives only in Script Properties and RLS can stay closed to everyone else.
+
+const PG_PAGE     = 1000;   // PostgREST caps a response; page past it
+const PG_CHUNK    = 500;    // rows per insert request
+const PG_ID_CHUNK = 200;    // ids per in.() filter, to keep URLs sane
+
+function pgUrl_()  { return requireProp_('SUPABASE_URL').replace(/\/+$/, ''); }
+function pgKey_()  { return requireProp_('SUPABASE_SERVICE_KEY'); }
+
+/**
+ * One PostgREST request. Throws with the body on any non-2xx, because a
+ * silent failure here would look exactly like an empty database.
+ */
+function pgFetch_(method, path, body, prefer) {
+  const key = pgKey_();
+  const headers = {
+    apikey: key,
+    Authorization: 'Bearer ' + key,
+    'Content-Type': 'application/json'
+  };
+  if (prefer) headers['Prefer'] = prefer;
+
+  const opts = { method: method, headers: headers, muteHttpExceptions: true };
+  if (body !== undefined && body !== null) opts.payload = JSON.stringify(body);
+
+  const res  = UrlFetchApp.fetch(pgUrl_() + '/rest/v1/' + path, opts);
+  const code = res.getResponseCode();
+  const text = res.getContentText();
+
+  if (code < 200 || code >= 300) {
+    // A 404 on a table that exists almost always means privileges, not a typo.
+    const hint = code === 404
+      ? ' (a 404 here usually means the table is not exposed to the API — re-run db/schema.sql, which grants service_role explicitly)'
+      : '';
+    throw new Error('Supabase ' + method.toUpperCase() + ' ' + path + ' -> ' + code + ': ' + text.slice(0, 300) + hint);
+  }
+  if (!text) return null;
+  try { return JSON.parse(text); } catch (_) { return null; }
+}
+
+/** GET everything, a page at a time. An unordered offset scan can repeat or
+    skip rows, so the order is always pinned. */
+function pgSelectAll_(table, orderBy, filter) {
+  let out = [], offset = 0;
+  for (;;) {
+    const q = table + '?select=*&order=' + orderBy
+      + (filter ? '&' + filter : '')
+      + '&limit=' + PG_PAGE + '&offset=' + offset;
+    const page = pgFetch_('get', q) || [];
+    out = out.concat(page);
+    if (page.length < PG_PAGE) return out;
+    offset += PG_PAGE;
+    if (offset > 200000) throw new Error('refusing to page past 200k rows from ' + table);
+  }
+}
+
+/** value list for a PostgREST in.() filter. */
+function pgInList_(values) {
+  return '(' + values.map(function (v) {
+    return '"' + String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+  }).join(',') + ')';
+}
+
+function pgChunk_(arr, size) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+// ---------------------------------------------------------------- conversion
+// The sheet's column names and Postgres's differ in three ways: camelCase vs
+// snake_case, `user` is reserved so the column is user_name, and blanks mean
+// null rather than empty string.
+
+/** '' -> null, so a numeric column never receives an empty string. */
+function pgNum_(v) {
+  const n = num_(v);
+  return isFinite(n) ? n : null;
+}
+
+function pgText_(v) {
+  const s = (v === null || v === undefined) ? '' : String(v);
+  return s === '' ? null : s;
+}
+
+/** A Date, a sheet serial or an ISO string -> ISO string, or null. */
+function pgTime_(v) {
+  if (v === null || v === undefined || v === '') return null;
+  if (v instanceof Date) return isNaN(v.getTime()) ? null : v.toISOString();
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+function pickToPg_(p) {
+  return {
+    id:        p.id,
+    week:      String(p.week || ''),
+    email:     String(p.email || ''),
+    user_name: String(p.user || ''),
+    league:    String(p.league || ''),
+    game_id:   String(p.gameId || ''),
+    matchup:   pgText_(p.matchup),
+    market:    String(p.market || ''),
+    kind:      pgText_(p.kind),
+    selection: pgText_(p.selection),
+    odds:      pgNum_(p.odds),
+    // meta arrives as a JSON *string* from the sheet path. jsonb wants the
+    // object, or it would store a quoted string and meta.line would vanish.
+    meta:      parseMeta_(p.meta) || {},
+    // An ungraded pick is '' in the sheet but the column is constrained.
+    status:    (String(p.status || '').toLowerCase() || 'pending'),
+    created_at: pgTime_(p.ts) || new Date().toISOString()
+  };
+}
+
+function pickFromPg_(r) {
+  return {
+    _key:      r.id,
+    id:        String(r.id || ''),
+    week:      String(r.week || ''),
+    email:     String(r.email || ''),
+    user:      String(r.user_name || ''),
+    league:    String(r.league || ''),
+    gameId:    String(r.game_id || ''),
+    matchup:   String(r.matchup || ''),
+    market:    String(r.market || ''),
+    kind:      String(r.kind || ''),
+    selection: String(r.selection || ''),
+    odds:      r.odds === null || r.odds === undefined ? '' : r.odds,
+    meta:      r.meta || {},
+    status:    String(r.status || '').toLowerCase(),
+    ts:        r.created_at ? new Date(r.created_at) : ''
+  };
+}
+
+function resultToPg_(r) {
+  return {
+    game_id:     String(r.gameId || ''),
+    league:      String(r.league || ''),
+    home_team:   String(r.home_team || ''),
+    away_team:   String(r.away_team || ''),
+    home_score:  pgNum_(r.homeScore),
+    away_score:  pgNum_(r.awayScore),
+    completed:   !!r.completed,
+    commence:    pgTime_(r.commence),
+    last_update: pgTime_(r.lastUpdate),
+    fetched_at:  new Date().toISOString()
+  };
+}
+
+function resultFromPg_(r) {
+  return {
+    _key:      r.game_id,
+    gameId:    String(r.game_id || ''),
+    league:    String(r.league || ''),
+    home_team: String(r.home_team || ''),
+    away_team: String(r.away_team || ''),
+    // null must stay null, not become 0 — the grader refuses on a blank score
+    // and would otherwise call an unplayed game nil-nil.
+    homeScore: r.home_score === null || r.home_score === undefined ? '' : r.home_score,
+    awayScore: r.away_score === null || r.away_score === undefined ? '' : r.away_score,
+    completed: !!r.completed
+  };
+}
+
+// ---------------------------------------------------------------- picks
+function pgReadPicks_() {
+  return pgSelectAll_('picks', 'created_at.asc,id.asc').map(pickFromPg_);
+}
+
+/** PostgREST cannot set different values across rows in one request, but it
+    can set one value across many. Grouping by verdict means at most three
+    calls however big the Sunday. */
+function pgSetPickStatuses_(updates) {
+  const byStatus = {};
+  for (const u of updates) (byStatus[u.status] = byStatus[u.status] || []).push(u._key);
+
+  let n = 0;
+  for (const status of Object.keys(byStatus)) {
+    for (const ids of pgChunk_(byStatus[status], PG_ID_CHUNK)) {
+      pgFetch_('patch', 'picks?id=in.' + encodeURIComponent(pgInList_(ids)),
+               { status: status });
+      n += ids.length;
+    }
+  }
+  return n;
+}
+
+function pgInsertPicks_(picks) {
+  let n = 0;
+  for (const batch of pgChunk_(picks.map(pickToPg_), PG_CHUNK)) {
+    pgFetch_('post', 'picks', batch, 'return=minimal');
+    n += batch.length;
+  }
+  return n;
+}
+
+function pgDeletePickKeys_(keys) {
+  let n = 0;
+  for (const ids of pgChunk_(keys, PG_ID_CHUNK)) {
+    pgFetch_('delete', 'picks?id=in.' + encodeURIComponent(pgInList_(ids)));
+    n += ids.length;
+  }
+  return n;
+}
+
+// ---------------------------------------------------------------- results
+function pgReadResults_() {
+  const out = {};
+  for (const row of pgSelectAll_('results', 'game_id.asc')) {
+    const r = resultFromPg_(row);
+    out[r.gameId] = r;
+  }
+  return out;
+}
+
+/** merge-duplicates makes this an upsert on the primary key, so a re-fetched
+    game updates in place instead of erroring. */
+function pgUpsertResults_(rows) {
+  let n = 0;
+  for (const batch of pgChunk_(rows.map(resultToPg_), PG_CHUNK)) {
+    pgFetch_('post', 'results', batch, 'resolution=merge-duplicates,return=minimal');
+    n += batch.length;
+  }
+  return n;
+}
+
+function pgDeleteResultIds_(ids) {
+  let n = 0;
+  for (const batch of pgChunk_(ids, PG_ID_CHUNK)) {
+    pgFetch_('delete', 'results?game_id=in.' + encodeURIComponent(pgInList_(batch)));
+    n += batch.length;
+  }
+  return n;
+}
+
+// ---------------------------------------------------------------- users
+function pgReadUsers_() {
+  return pgSelectAll_('users', 'email.asc').map(function (u) {
+    return {
+      email: String(u.email || '').trim().toLowerCase(),
+      role:  String(u.role  || '').trim().toLowerCase()
+    };
+  });
 }
 
 // ===== HTTP HANDLERS =========================================================
@@ -845,11 +1149,15 @@ function getMyPicks_(email) {
 // One pass over the sheet builds week -> user -> record. Everything else
 // (weekly winners, the season table, a single week's detail) reads off that.
 
-function tallies_() {
+function tallies_() { return talliesFrom_(readPicks_()); }
+
+/** Split out from tallies_ so the same arithmetic can be run over either
+    backend's rows when comparing the two. */
+function talliesFrom_(picks) {
   const weeks = {};   // week -> { user -> {wins,losses,pushes,pending,total} }
   const users = {};   // user -> season totals
 
-  for (const p of readPicks_()) {
+  for (const p of picks) {
     const user = p.user.trim();
     if (!user) continue;
     const week = p.week;
@@ -1390,4 +1698,249 @@ function pairNote_(why, x, y) {
   return '  ' + x.week + '  ' + x.matchup + '  [' + why + ']\n'
     + '    row ' + x.row + '  ' + x.user + '  ' + x.market + ' ' + x.kind + ' ' + x.selection + lineNote_(x) + '  -> ' + x.status + '\n'
     + '    row ' + y.row + '  ' + y.user + '  ' + y.market + ' ' + y.kind + ' ' + y.selection + lineNote_(y) + '  -> ' + y.status;
+}
+
+// ===== MIGRATION =============================================================
+// Moving from Sheets to Postgres, and proving it worked before committing to
+// it. These call the two implementations by name rather than through the
+// dispatchers, so they behave the same whichever way STORAGE is set.
+//
+// Order of operations:
+//
+//   1. run db/schema.sql in the Supabase SQL editor
+//   2. add SUPABASE_URL and SUPABASE_SERVICE_KEY to Script Properties
+//   3. checkSetup()              — both backends reachable?
+//   4. migrateSheetsToPostgres() — copies everything, safe to re-run
+//   5. compareBackends()         — do they now agree, row for row?
+//   6. set STORAGE = postgres    — the cutover
+//   7. runSelfTest()             — grading still correct on the new backend
+//
+// The Sheet is left completely untouched throughout, so step 6 is reversible
+// by deleting the property.
+
+/** Upsert rather than insert, so a re-run after a partial failure repairs
+    instead of colliding on the primary key. */
+function pgUpsertPicks_(picks) {
+  let n = 0;
+  for (const batch of pgChunk_(picks.map(pickToPg_), PG_CHUNK)) {
+    pgFetch_('post', 'picks', batch, 'resolution=merge-duplicates,return=minimal');
+    n += batch.length;
+  }
+  return n;
+}
+
+/**
+ * As above, but when a batch is rejected it finds out which rows are actually
+ * at fault instead of reporting "400" over five hundred of them.
+ *
+ * Postgres names the constraint, not the row. During a migration that is the
+ * difference between a one-line fix and an afternoon, so on failure this
+ * re-sends the batch a row at a time and reports the offenders by id.
+ */
+function pgUpsertPicksNamingFailures_(picks) {
+  const rows = picks.map(pickToPg_);
+  const bad = [];
+  let n = 0;
+
+  for (const batch of pgChunk_(rows, PG_CHUNK)) {
+    try {
+      pgFetch_('post', 'picks', batch, 'resolution=merge-duplicates,return=minimal');
+      n += batch.length;
+    } catch (_) {
+      for (const row of batch) {
+        try {
+          pgFetch_('post', 'picks', [row], 'resolution=merge-duplicates,return=minimal');
+          n++;
+        } catch (e) {
+          bad.push({ id: row.id, why: String(e.message).slice(0, 160) });
+        }
+      }
+    }
+  }
+  return { copied: n, rejected: bad };
+}
+
+function pgUpsertUsers_(users) {
+  if (!users.length) return 0;
+  let n = 0;
+  for (const batch of pgChunk_(users, PG_CHUNK)) {
+    pgFetch_('post', 'users', batch, 'resolution=merge-duplicates,return=minimal');
+    n += batch.length;
+  }
+  return n;
+}
+
+/**
+ * Copy the Sheet into Postgres. Idempotent: every write is an upsert keyed on
+ * the primary key, so running it twice is the same as running it once, and
+ * running it again later picks up anything added since.
+ */
+function migrateSheetsToPostgres() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) return 'FAILED: another run is in progress';
+
+  try {
+    const out = [];
+
+    // --- picks
+    const picks = sheetReadPicks_().filter(function (p) {
+      if (p.week === SELFTEST_WEEK) return false;      // scaffolding, not data
+      return !!(p.id || p.gameId || p.email);           // drop blank trailing rows
+    });
+
+    // Legacy rows predate ids. The primary key cannot be blank, and two blank
+    // ids would collide on upsert, so mint a stable one from the row.
+    let minted = 0;
+    for (const p of picks) {
+      if (!p.id) { p.id = 'legacy_' + p._key; minted++; }
+    }
+
+    const seen = {}, dupes = [];
+    for (const p of picks) {
+      if (seen[p.id]) dupes.push(p.id);
+      seen[p.id] = true;
+    }
+    if (dupes.length) {
+      return 'ABORTED: ' + dupes.length + ' duplicate pick id(s) in the Sheet, e.g. '
+        + dupes.slice(0, 5).join(', ') + '.\nUpserting them would silently merge rows. '
+        + 'Fix the ids in the Sheet first.';
+    }
+
+    const res = pgUpsertPicksNamingFailures_(picks);
+    out.push('picks   : ' + res.copied + ' copied'
+      + (minted ? ' (' + minted + ' had no id and were given one)' : ''));
+    if (res.rejected.length) {
+      out.push('');
+      out.push('REJECTED — ' + res.rejected.length + ' pick(s) Postgres would not accept:');
+      for (const b of res.rejected.slice(0, 10)) out.push('  ' + b.id + ': ' + b.why);
+      out.push('');
+      out.push('Fix these rows in the Sheet and run the migration again. Everything');
+      out.push('else was copied, and re-running only repairs what is missing.');
+      const msg = out.join('\n');
+      Logger.log(msg);
+      return msg;
+    }
+
+    // --- results
+    const cache = sheetReadResults_();
+    const results = Object.keys(cache)
+      .filter(function (id) { return id.indexOf(SELFTEST_PREFIX) !== 0; })
+      .map(function (id) { return cache[id]; });
+    out.push('results : ' + pgUpsertResults_(results) + ' copied');
+
+    // --- users. Roles are free text in the Sheet and constrained in Postgres.
+    const users = [], skipped = [];
+    for (const u of sheetReadUsers_()) {
+      if (!u.email) continue;
+      if (u.role && u.role !== 'admin' && u.role !== 'player') skipped.push(u.email + '="' + u.role + '"');
+      users.push({ email: u.email, role: u.role === 'admin' ? 'admin' : 'player' });
+    }
+    out.push('users   : ' + pgUpsertUsers_(users) + ' copied'
+      + (skipped.length ? ' (unrecognised role defaulted to player: ' + skipped.join(', ') + ')' : ''));
+
+    out.push('');
+    out.push('Now run compareBackends(). The Sheet has not been modified.');
+    const msg = out.join('\n');
+    Logger.log(msg);
+    return msg;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Read both backends and report every difference. This is what makes the
+ * cutover a decision rather than a leap — nothing is deleted and nothing is
+ * switched, it just tells you whether the two agree.
+ */
+function compareBackends() {
+  const sheetPicks = sheetReadPicks_().filter(function (p) {
+    return p.week !== SELFTEST_WEEK && !!(p.id || p.gameId || p.email);
+  });
+  const pgPicks = pgReadPicks_().filter(function (p) { return p.week !== SELFTEST_WEEK; });
+
+  const out = [];
+  const problems = [];
+
+  out.push('picks : Sheet ' + sheetPicks.length + '  Postgres ' + pgPicks.length);
+  if (sheetPicks.length !== pgPicks.length) problems.push('pick counts differ');
+
+  // Field-level comparison on the rows that exist in both.
+  const pgById = {};
+  for (const p of pgPicks) pgById[p.id] = p;
+
+  const missing = [], mismatched = [];
+  for (const s of sheetPicks) {
+    const id = s.id || ('legacy_' + s._key);
+    const t = pgById[id];
+    if (!t) { missing.push(id); continue; }
+    for (const f of ['week', 'email', 'user', 'league', 'gameId', 'market', 'kind', 'selection']) {
+      if (String(s[f] || '') !== String(t[f] || '')) {
+        mismatched.push(id + '.' + f + ': "' + s[f] + '" vs "' + t[f] + '"');
+        break;
+      }
+    }
+    // status '' in the Sheet is 'pending' in Postgres, which is not a mismatch.
+    const ss = s.status || 'pending', ts = t.status || 'pending';
+    if (ss !== ts) mismatched.push(id + '.status: "' + ss + '" vs "' + ts + '"');
+
+    const sm = parseMeta_(s.meta) || {}, tm = parseMeta_(t.meta) || {};
+    for (const k of ['line', 'total']) {
+      const a = sm[k] === undefined ? null : Number(sm[k]);
+      const b = tm[k] === undefined ? null : Number(tm[k]);
+      if (String(a) !== String(b)) mismatched.push(id + '.meta.' + k + ': ' + a + ' vs ' + b);
+    }
+  }
+  if (missing.length)    problems.push(missing.length + ' pick(s) missing from Postgres');
+  if (mismatched.length) problems.push(mismatched.length + ' field mismatch(es)');
+
+  // --- results
+  const sr = sheetReadResults_(), pr = pgReadResults_();
+  const srIds = Object.keys(sr).filter(function (i) { return i.indexOf(SELFTEST_PREFIX) !== 0; });
+  out.push('results: Sheet ' + srIds.length + '  Postgres ' + Object.keys(pr).length);
+  for (const id of srIds) {
+    const a = sr[id], b = pr[id];
+    if (!b) { problems.push('result ' + id + ' missing from Postgres'); continue; }
+    if (String(a.homeScore) !== String(b.homeScore) || String(a.awayScore) !== String(b.awayScore)) {
+      problems.push('result ' + id + ' scores differ: ' + a.homeScore + '-' + a.awayScore
+        + ' vs ' + b.homeScore + '-' + b.awayScore);
+    }
+    if (!!a.completed !== !!b.completed) problems.push('result ' + id + ' completed flag differs');
+  }
+
+  // --- the thing that actually matters: does the scoreboard come out the same?
+  const st = talliesFrom_(sheetPicks).users, pt = talliesFrom_(pgPicks).users;
+  const names = {};
+  for (const n of Object.keys(st)) names[n] = true;
+  for (const n of Object.keys(pt)) names[n] = true;
+  out.push('users  : ' + Object.keys(names).length + ' on the board');
+
+  for (const n of Object.keys(names)) {
+    const a = st[n], b = pt[n];
+    if (!a || !b) { problems.push(n + ' appears on only one backend'); continue; }
+    for (const f of ['wins', 'losses', 'pushes', 'pending']) {
+      if (a[f] !== b[f]) problems.push(n + ' ' + f + ': ' + a[f] + ' vs ' + b[f]);
+    }
+  }
+
+  if (mismatched.length) {
+    out.push('');
+    out.push('FIELD MISMATCHES (first 10):');
+    for (const m of mismatched.slice(0, 10)) out.push('  ' + m);
+  }
+  if (missing.length) {
+    out.push('');
+    out.push('MISSING FROM POSTGRES (first 10): ' + missing.slice(0, 10).join(', '));
+  }
+
+  const msg = problems.length
+    ? out.join('\n') + '\n\nNOT READY — ' + problems.length + ' problem(s):\n  '
+      + problems.slice(0, 15).join('\n  ')
+      + '\n\nRe-run migrateSheetsToPostgres(), then compare again.'
+    : out.join('\n') + '\n\nIDENTICAL — both backends agree on every pick, result and record.\n'
+      + '  Safe to set Script Property STORAGE = postgres.\n'
+      + '  Then run runSelfTest() to confirm grading works against it.';
+
+  Logger.log(msg);
+  return msg;
 }
