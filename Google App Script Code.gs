@@ -2462,3 +2462,62 @@ function applyWeekNormalization(confirm) {
     lock.releaseLock();
   }
 }
+
+/**
+ * Remove every pick in one week from whichever backend is live.
+ *
+ * The migration only ever upserts, deliberately - a migration that deletes
+ * rows because they are missing from its source is how a bad export destroys a
+ * season. The cost of that safety is that deleting from the Sheet no longer
+ * changes what the site shows, so removing a week has to be asked for here.
+ *
+ * Called with one argument it reports and writes nothing.
+ */
+function deleteWeek(week, confirm) {
+  const want = String(week || '');
+  if (!want) return 'Which week? Pass the label exactly as getWeeks_() shows it.';
+
+  const doomed = readPicks_().filter(function (p) { return p.week === want; });
+  if (!doomed.length) {
+    return 'No picks found for week "' + want + '". Nothing to do.\n'
+      + '  The label has to match exactly - getWeeks_() prints them.';
+  }
+
+  const users = {};
+  for (const p of doomed) users[p.user] = (users[p.user] || 0) + 1;
+  const who = Object.keys(users).map(function (u) {
+    return u + ' (' + users[u] + ')';
+  }).join(', ');
+
+  const graded = doomed.filter(function (p) {
+    return p.status && p.status !== 'pending';
+  }).length;
+
+  if (confirm !== true) {
+    const out = [];
+    out.push('DRY RUN - nothing deleted.');
+    out.push('  week    : ' + want);
+    out.push('  picks   : ' + doomed.length + (graded ? '  (' + graded + ' already graded)' : ''));
+    out.push('  players : ' + who);
+    out.push('');
+    if (graded) {
+      out.push('  WARNING: this week contains graded picks, so deleting it changes');
+      out.push('  the standings. Check that is what you want.');
+      out.push('');
+    }
+    out.push('  Run deleteWeek("' + want + '", true) to remove them.');
+    out.push('  Not undoable from here - the Sheet is the only other copy.');
+    return out.join('\n');
+  }
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) return 'FAILED: another run is in progress';
+  try {
+    const n = deletePickKeys_(doomed.map(function (p) { return p._key; }));
+    const msg = 'Deleted ' + n + ' pick(s) from week "' + want + '" (' + who + ').';
+    Logger.log(msg);
+    return msg;
+  } finally {
+    lock.releaseLock();
+  }
+}

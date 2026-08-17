@@ -67,7 +67,7 @@ function load(pickRows) {
   };
   const names = Object.keys(env);
   return new Function(...names,
-    SRC + "return { auditGrades, backtestWeek, backtestTemplate, splitMatchup_, readWeekPicks_, weekKey_, getWeeks_, seasonOf_, nearestWednesday_, weekPlanReport, applyWeekNormalization };"
+    SRC + "return { auditGrades, backtestWeek, backtestTemplate, splitMatchup_, readWeekPicks_, weekKey_, getWeeks_, seasonOf_, nearestWednesday_, weekPlanReport, applyWeekNormalization, deleteWeek };"
   )(...names.map((n) => env[n]));
 }
 
@@ -419,6 +419,40 @@ section("an unparseable label is left alone rather than guessed at");
   api.applyWeekNormalization(true);
   ok(rows[1][1] === "Week 3", "and survives the write untouched", rows[1][1]);
   ok(rows[2][1] === "2025-10-01", "while the parseable one is normalised", rows[2][1]);
+}
+
+section("deleting a week takes saying so, and warns about graded picks");
+{
+  const W = "Wed Dec 10 2025 00:00:00 GMT-0600 (Central Standard Time)";
+  const mk = (status) => [HEAD,
+    ["d1", W, "w@x.com", "Whit", "NFL", "g1", M, "moneyline", "ml", KC, "", "{}", status, ""],
+    ["d2", W, "w@x.com", "Whit", "NFL", "g2", M, "moneyline", "ml", KC, "", "{}", status, ""],
+    ["keep", "Wed Dec 03 2025 00:00:00 GMT-0600 (CST)", "a@x.com", "Ann",
+     "NFL", "g3", M, "moneyline", "ml", KC, "", "{}", "win", ""]];
+
+  const rows = mk("pending");
+  const api = load(rows);
+
+  const dry = api.deleteWeek(W);
+  ok(/^DRY RUN - nothing deleted/.test(dry), "one argument is a dry run", dry.split("\n")[0]);
+  ok(/picks   : 2/.test(dry), "it counts them", (dry.match(/picks +:[^\n]*/) || [])[0]);
+  ok(/Whit \(2\)/.test(dry), "and says whose they are");
+  ok(rows.length === 4, "and deletes nothing", rows.length);
+
+  ok(/No picks found/.test(api.deleteWeek("Wed Jan 01 2020")), "an unknown week says so");
+  ok(/Which week\?/.test(api.deleteWeek("")), "and a blank one asks");
+
+  const done = api.deleteWeek(W, true);
+  ok(/Deleted 2 pick\(s\)/.test(done), "true actually removes them", done);
+  ok(rows.length === 2, "the rows are gone", rows.length - 1);
+  ok(rows[1][0] === "keep", "and the other week is untouched", rows[1][0]);
+
+  // Deleting graded picks changes the standings, so it must say so.
+  const gradedDry = load(mk("win")).deleteWeek(W);
+  ok(/2 already graded/.test(gradedDry), "graded picks are counted",
+     (gradedDry.match(/picks +:[^\n]*/) || [])[0]);
+  ok(/changes\n  the standings/.test(gradedDry), "and the consequence is spelled out");
+  ok(!/already graded/.test(dry), "an all-pending week gets no such warning");
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

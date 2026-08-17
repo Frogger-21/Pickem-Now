@@ -291,11 +291,18 @@ async function fetchOdds(){
     console.error('Odds fetch failed', e);
     // The commonest cause by far is a stale pg_api override pointing at a
     // deployment that no longer exists, so say so and offer the way out.
-    const extra = CONFIG.OVERRIDDEN
-      ? '<br><br><strong>This browser has a saved backend address that overrides the'
-        + ' deployed one.</strong> If that address is out of date, nothing will load.'
-        + '<br><a href="?reset=1">Click here to clear it and reload.</a>'
-      : '';
+    // Say which address was actually used. Without it, "Failed to fetch" is
+    // indistinguishable between a dead backend, a stale saved override and a
+    // cached copy of this page, and the three have different fixes.
+    const api = String(CONFIG.API || '(none)');
+    const tail = api.length > 60 ? api.slice(0, 45) + '...' + api.slice(-12) : api;
+    const extra = '<br><br>Tried: <code>' + tail + '</code>'
+      + (CONFIG.OVERRIDDEN
+          ? '<br><strong>That address came from this browser, not from the deployed'
+            + ' site.</strong> If it is out of date nothing will load.'
+            + '<br><a href="?reset=1">Clear it and reload.</a>'
+          : '<br>That is the deployed address. If it looks wrong, this page is a'
+            + ' cached copy - reload with Ctrl+Shift+R.');
     root.innerHTML = '<div class="hint">Failed to load odds from server: '
       + String(e.message||e) + extra + '</div>';
   }
