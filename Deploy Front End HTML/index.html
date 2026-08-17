@@ -207,10 +207,25 @@
 // To run this file straight off your desktop, set the override once in the
 // browser console and reload:
 //     localStorage.setItem('pg_api', 'https://script.google.com/.../exec')
+/* A pg_api override in localStorage beats the URL baked in at build time, and
+   it survives every redeploy. That is the point of it for local testing, but
+   it also means a stale one silently breaks the live site for whoever set it,
+   with no symptom beyond "Failed to fetch" and no way out that does not
+   involve a developer console. So: visiting /?reset=1 clears it. */
+if (/[?&]reset=1(&|$)/.test(location.search)) {
+  try { localStorage.removeItem('pg_api'); } catch (_) {}
+  location.replace(location.pathname);
+}
+
 const CONFIG = {
   API: (function () {
     try { const o = localStorage.getItem('pg_api'); if (o) return o; } catch (_) {}
     return '__APPS_SCRIPT_URL__';
+  })(),
+  /* True when an override is in play, so the page can say so rather than
+     leaving you to wonder why it disagrees with what was deployed. */
+  OVERRIDDEN: (function () {
+    try { return !!localStorage.getItem('pg_api'); } catch (_) { return false; }
   })()
 };
 
@@ -274,7 +289,15 @@ async function fetchOdds(){
     filterByWeek();
   }catch(e){
     console.error('Odds fetch failed', e);
-    root.innerHTML = '<div class="hint">Failed to load odds from server: '+ String(e.message||e) +'</div>';
+    // The commonest cause by far is a stale pg_api override pointing at a
+    // deployment that no longer exists, so say so and offer the way out.
+    const extra = CONFIG.OVERRIDDEN
+      ? '<br><br><strong>This browser has a saved backend address that overrides the'
+        + ' deployed one.</strong> If that address is out of date, nothing will load.'
+        + '<br><a href="?reset=1">Click here to clear it and reload.</a>'
+      : '';
+    root.innerHTML = '<div class="hint">Failed to load odds from server: '
+      + String(e.message||e) + extra + '</div>';
   }
 }
 
