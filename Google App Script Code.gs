@@ -85,12 +85,21 @@ function checkSetup() {
   out.push('STORAGE'.padEnd(21) + ': ' + kind + (props_().getProperty('STORAGE') ? '' : '  (unset, defaulting to sheets)'));
 
   out.push('');
-  try {
-    const ss = SpreadsheetApp.openById(sheetId_());
-    out.push('Sheet     : opens OK, "' + ss.getName() + '", '
-      + sheetReadPicks_().length + ' pick row(s)');
-  } catch (e) {
-    out.push('Sheet     : FAILED — ' + e.message);
+  // Once STORAGE is postgres nothing reads the Sheet, so a missing SHEET_ID is
+  // a finished migration rather than a fault. Reporting it as FAILED would
+  // train you to ignore the line that matters.
+  const sheetInUse = !usingPostgresSafe_() || !!props_().getProperty('SHEET_ID');
+  if (!sheetInUse) {
+    out.push('Sheet     : not in use (STORAGE is postgres)');
+  } else {
+    try {
+      const ss = SpreadsheetApp.openById(sheetId_());
+      const n = sheetReadPicks_().length;
+      out.push('Sheet     : opens OK, "' + ss.getName() + '", ' + n + ' pick row(s)'
+        + (n === 0 ? '  — empty, so there is nothing to migrate' : ''));
+    } catch (e) {
+      out.push('Sheet     : FAILED — ' + e.message);
+    }
   }
 
   if (props_().getProperty('SUPABASE_URL')) {
@@ -156,6 +165,12 @@ function storageKind_() {
 }
 
 function usingPostgres_() { return storageKind_() === 'postgres'; }
+
+/** For diagnostics only: never throws, so checkSetup can report a bad STORAGE
+    value rather than dying before it prints anything useful. */
+function usingPostgresSafe_() {
+  try { return usingPostgres_(); } catch (_) { return false; }
+}
 
 function readPicks_()               { return usingPostgres_() ? pgReadPicks_()               : sheetReadPicks_(); }
 function setPickStatuses_(updates)  { if (!updates || !updates.length) return 0;

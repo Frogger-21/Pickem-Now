@@ -520,6 +520,30 @@ section("checkSetup reports both backends without printing secrets");
   ok(/Postgres  : reachable/.test(msg), "and it is actually contacted");
 }
 
+section("checkSetup stops nagging about a Sheet no longer in use");
+{
+  // Migration finished, SHEET_ID deleted: the Sheet is not a fault any more.
+  const done = { SUPABASE_URL: SUPA.SUPABASE_URL, SUPABASE_SERVICE_KEY: "x".repeat(64),
+                 ODDS_API_KEY: "odds", STORAGE: "postgres" };
+  const msg = harness({}, done).api.checkSetup();
+  ok(/Sheet     : not in use \(STORAGE is postgres\)/.test(msg),
+     "it says so plainly", (msg.match(/Sheet[^\n]*/) || [])[0]);
+  ok(!/Sheet     : FAILED/.test(msg), "rather than reporting a failure");
+
+  // But while still on sheets, a missing SHEET_ID is very much a fault.
+  const notDone = { ...done, STORAGE: "sheets" };
+  const msg2 = harness({}, notDone).api.checkSetup();
+  ok(/Sheet     : FAILED/.test(msg2), "on the sheets backend it is still a fault",
+     (msg2.match(/Sheet[^\n]*/) || [])[0]);
+
+  // An empty sheet is worth flagging before anyone runs a migration on it.
+  const empty = harness({ Picks: [], Results: [], Users: [] },
+                        { ...SUPA, SUPABASE_SERVICE_KEY: "x".repeat(64),
+                          SHEET_ID: "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcd" }).api.checkSetup();
+  ok(/0 pick row\(s\)  — empty, so there is nothing to migrate/.test(empty),
+     "an empty sheet says there is nothing to migrate", (empty.match(/Sheet[^\n]*/) || [])[0]);
+}
+
 section("checkSetup names a property holding the wrong kind of value");
 {
   // The real mistake this exists for: the whole Sheets URL pasted into
