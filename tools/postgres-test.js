@@ -210,7 +210,10 @@ function harness(sheets, props, scores) {
       base64Decode: (b64) => Array.from(Buffer.from(b64, "base64")),
       newBlob: (bytes) => ({ getDataAsString: () => Buffer.from(bytes).toString("utf8") })
     },
-    ContentService: {}
+    ContentService: {
+      MimeType: { JSON: "application/json" },
+      createTextOutput: (t) => ({ setMimeType: () => ({ getContent: () => t }) })
+    }
   };
 
   const names = Object.keys(env);
@@ -219,7 +222,8 @@ function harness(sheets, props, scores) {
     pgReadPicks_, sheetReadPicks_, getBoard_, runAutoGrade_, runSelfTest,
     submitPicks_, getMyPicks_, isAdminEmail_, storageKind_, checkSetup,
     upsertResults_, setPickStatuses_, gradePick_,
-    testAutoGradeLive, findFinishedGame_, livePicksFor_, checkOddsApi
+    testAutoGradeLive, findFinishedGame_, livePicksFor_, checkOddsApi,
+    doGet, capabilities_, CODE_VERSION
   };`)(...names.map((n) => env[n]));
 
   return { api, pg, store, oddsCalls };
@@ -740,6 +744,34 @@ section("checkOddsApi asks a question that can actually be answered");
      msg2.split("\n").pop());
   ok(/testAutoGradeLive\(\)/.test(msg2), "naming it");
   ok(/Kansas City Chiefs 31/.test(msg2), "listing the real score it found");
+}
+
+// ------------------------------------------------------- which code is live
+// The failure this exists for: "New deployment" mints a fresh URL while the
+// old one keeps serving old code. The site called the old URL, the new one
+// tested fine, and the two disagreed with nothing to point at.
+section("a bare GET says which code is running at that URL");
+{
+  const { api } = harness({ Picks: [HEAD], Results: [], Users: [["email","role"]] },
+                          { ...PG_ON, SHEET_ID: "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcd" });
+
+  // Read back what doGet actually serialised, rather than a paraphrase of it.
+  const served = (params) => JSON.parse(api.doGet({ parameter: params }).getContent());
+
+  const body = served({});
+  ok(body.ok === true, "a bare GET is a success, not an error", JSON.stringify(body).slice(0, 60));
+  ok(body.version === api.CODE_VERSION, "it reports the code version", body.version);
+  ok(Array.isArray(body.has), "and a capability list");
+  ok(body.storage === "postgres", "and which backend is live", body.storage);
+
+  // Derived from real functions, so it cannot claim something absent.
+  for (const cap of ["autograde", "postgres", "selftest", "livetest", "audit", "backtest", "weeksort"]) {
+    ok(body.has.indexOf(cap) >= 0, "reports capability: " + cap, body.has.join(","));
+  }
+
+  const unknown = served({ fn: "nope" });
+  ok(unknown.ok === false, "an unknown fn is still an error");
+  ok(/Valid: /.test(unknown.error), "but lists the valid names", unknown.error);
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

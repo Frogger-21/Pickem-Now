@@ -102,6 +102,9 @@ function propWarning_(key, v) {
 function checkSetup() {
   const out = [];
   let bad = 0;
+  out.push('code version         : ' + CODE_VERSION);
+  out.push('capabilities         : ' + capabilities_().join(', '));
+  out.push('');
   for (const k of ['ODDS_API_KEY', 'SHEET_ID', 'SUPABASE_URL', 'SUPABASE_SERVICE_KEY']) {
     const v = props_().getProperty(k);
     // The URL is not a secret and is worth seeing; the keys are, so only their
@@ -646,6 +649,34 @@ function pgReadUsers_() {
 // GET: odds (league=nfl|ncaaf[,nocache=1]), mine (email), board, isAdmin (email)
 const GET_FNS = ['odds', 'mine', 'board', 'weeks', 'week', 'isAdmin'];
 
+// Bump when pasting a new copy into the editor. Only a human can keep this
+// honest, which is why it is not the thing to trust - see capabilities_().
+const CODE_VERSION = '2026-08-17a';
+
+/**
+ * What this deployment can actually do, derived rather than declared.
+ *
+ * A version string is only as truthful as whoever last edited it. Each entry
+ * here is a real function either being present or not, so it cannot drift: it
+ * reports the code that is genuinely running at this URL.
+ *
+ * The reason it exists: a "New deployment" mints a fresh URL while the old one
+ * carries on serving old code. The site kept calling the old URL, the new one
+ * tested fine, and the two disagreed for an hour with nothing to point at.
+ */
+function capabilities_() {
+  const has = {
+    autograde: typeof autoGrade          === 'function',
+    postgres:  typeof pgReadPicks_       === 'function',
+    selftest:  typeof runSelfTest        === 'function',
+    livetest:  typeof testAutoGradeLive  === 'function',
+    audit:     typeof auditGrades        === 'function',
+    backtest:  typeof backtestWeek       === 'function',
+    weeksort:  typeof weekKey_           === 'function'
+  };
+  return Object.keys(has).filter(function (k) { return has[k]; });
+}
+
 function doGet(e) {
   e = e || {};
   const p = e.parameter || {};
@@ -656,6 +687,8 @@ function doGet(e) {
     if (!p.fn) {
       return asJson(ok({
         service: 'Pickem Now API',
+        version: CODE_VERSION,
+        has:     capabilities_(),
         storage: storageKind_(),
         usage:   'add ?fn=<name> to this URL',
         fn:      GET_FNS,
