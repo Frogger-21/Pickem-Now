@@ -2434,6 +2434,27 @@ function weekPlanReport() {
  * Rewrite the week label on every pick. Takes an argument you must pass on
  * purpose, so it cannot be run by picking it out of the dropdown by accident.
  */
+/* Apps Script's Run button calls a function with no arguments, so anything
+   guarded by a confirmation flag cannot be run from the dropdown at all - it
+   just reports that it is refusing. These no-argument twins exist to be picked
+   from that dropdown. The guard still stands: you have to choose the one whose
+   name says plainly what it will do. */
+function CONFIRM_applyWeekNormalization() {
+  return applyWeekNormalization(true);
+}
+
+function CONFIRM_deleteWeek() {
+  const w = props_().getProperty('DELETE_WEEK');
+  if (!w) {
+    return [
+      'Set a Script Property DELETE_WEEK to the exact week label first, then',
+      'run this again. To see what would go without deleting anything, call',
+      'deleteWeek("<label>") with one argument - that is always a dry run.'
+    ].join('\n');
+  }
+  return deleteWeek(w, true);
+}
+
 function applyWeekNormalization(confirm) {
   if (confirm !== true) {
     return 'Refusing to run. This rewrites the week label on every pick.\n'
