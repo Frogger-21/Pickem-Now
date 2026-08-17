@@ -41,6 +41,27 @@ function sheetId_()    { return requireProp_('SHEET_ID'); }
  * SpreadsheetApp — accurate, but it names neither the property nor what a
  * right answer looks like.
  */
+/**
+ * The `role` claim out of a Supabase JWT, or null if it isn't one.
+ *
+ * Legacy Supabase keys are JWTs whose payload says which role they act as, and
+ * anon and service_role look identical from the outside. Reading the claim is
+ * the only way to tell them apart without making a request.
+ */
+function jwtRole_(token) {
+  const parts = String(token || '').split('.');
+  if (parts.length !== 3) return null;
+  try {
+    const b64  = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const pad  = b64 + '==='.slice((b64.length + 3) % 4);
+    const json = Utilities.newBlob(Utilities.base64Decode(pad)).getDataAsString();
+    const m = json.match(/"role"\s*:\s*"([a-z_]+)"/);
+    return m ? m[1] : null;
+  } catch (_) {
+    return null;   // not decodable is not a verdict
+  }
+}
+
 function propWarning_(key, v) {
   if (!v) return null;
   const looksLikeUrl = /^https?:\/\//i.test(v);
@@ -60,6 +81,18 @@ function propWarning_(key, v) {
   }
   if (key === 'SUPABASE_SERVICE_KEY') {
     if (looksLikeUrl) return 'that is a URL, not a key.';
+    // The publishable key is the same length and shape as the secret one, so
+    // the only symptom is a 401 from PostgREST several steps later saying
+    // "permission denied ... GRANT SELECT TO anon". Name it here instead.
+    if (v.indexOf('sb_publishable_') === 0) {
+      return 'that is the PUBLISHABLE key. RLS is on with no policies, so it can '
+        + 'read nothing. Use the secret key (sb_secret_...) — Supabase warns you '
+        + 'when revealing it, which is expected: it only ever lives here.';
+    }
+    if (jwtRole_(v) === 'anon') {
+      return 'that is the anon key. RLS is on with no policies, so it can read '
+        + 'nothing. Use the service_role key.';
+    }
     if (v.length < 40) return 'too short for a service_role key.';
   }
   if (key === 'ODDS_API_KEY' && looksLikeUrl) return 'that is a URL, not a key.';

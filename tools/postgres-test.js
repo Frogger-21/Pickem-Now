@@ -204,7 +204,12 @@ function harness(sheets, props, scores) {
     LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock() {} }) },
     Logger: { log() {} },
     CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) },
-    ScriptApp: {}, Utilities: { getUuid: () => "uuid-" + Math.random().toString(36).slice(2, 8) },
+    ScriptApp: {},
+    Utilities: {
+      getUuid: () => "uuid-" + Math.random().toString(36).slice(2, 8),
+      base64Decode: (b64) => Array.from(Buffer.from(b64, "base64")),
+      newBlob: (bytes) => ({ getDataAsString: () => Buffer.from(bytes).toString("utf8") })
+    },
     ContentService: {}
   };
 
@@ -518,6 +523,40 @@ section("checkSetup reports both backends without printing secrets");
   ok(/SUPABASE_URL *: https:\/\/test\.supabase\.co/.test(msg), "the URL is shown, since it is not a secret");
   ok(/STORAGE *: postgres/.test(msg), "the live backend is stated");
   ok(/Postgres  : reachable/.test(msg), "and it is actually contacted");
+}
+
+section("checkSetup tells the publishable key from the secret one");
+{
+  // These are the same length and shape. The only symptom otherwise is a 401
+  // from PostgREST saying "permission denied ... GRANT SELECT TO anon", which
+  // arrives several steps and one confusing warning banner later.
+  const jwt = (role) => {
+    const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64")
+      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    return b64({ alg: "HS256" }) + "." + b64({ iss: "supabase", role: role }) + ".sig";
+  };
+
+  const pub = harness({}, { ...PG_ON, SHEET_ID: "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcd",
+                            SUPABASE_SERVICE_KEY: "sb_publishable_" + "x".repeat(31) }).api.checkSetup();
+  ok(/that is the PUBLISHABLE key/.test(pub), "the new-style publishable key is named",
+     (pub.match(/\^\^ WRONG VALUE[^\n]*/) || [])[0]);
+  ok(/RLS is on with no policies/.test(pub), "and why it cannot possibly work");
+  ok(/Supabase warns you/.test(pub), "and that the scary warning on the right key is expected");
+
+  const anon = harness({}, { ...PG_ON, SHEET_ID: "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcd",
+                             SUPABASE_SERVICE_KEY: jwt("anon") }).api.checkSetup();
+  ok(/that is the anon key/.test(anon), "the legacy anon JWT is caught by its role claim",
+     (anon.match(/\^\^ WRONG VALUE[^\n]*/) || [])[0]);
+
+  const svc = harness({}, { ...PG_ON, SHEET_ID: "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcd",
+                            SUPABASE_SERVICE_KEY: jwt("service_role") }).api.checkSetup();
+  ok(!/WRONG VALUE/.test(svc), "the right JWT passes silently",
+     (svc.match(/\^\^[^\n]*/) || [])[0]);
+
+  const secret = harness({}, { ...PG_ON, SHEET_ID: "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcd",
+                               SUPABASE_SERVICE_KEY: "sb_secret_" + "x".repeat(36) }).api.checkSetup();
+  ok(!/WRONG VALUE/.test(secret), "and so does the new-style secret key",
+     (secret.match(/\^\^[^\n]*/) || [])[0]);
 }
 
 section("checkSetup stops nagging about a Sheet no longer in use");
