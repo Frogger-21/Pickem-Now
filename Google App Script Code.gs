@@ -1512,10 +1512,16 @@ function runSelfTest() {
  */
 function checkOddsApi() {
   const out = [];
+  let anyFinished = 0;
+
   for (const league of ['NFL', 'NCAAF']) {
     try {
+      // daysFrom is what makes finished games visible at all. Without it the
+      // endpoint returns only live and upcoming fixtures, so "0 completed"
+      // would be the answer on every day of the year — including a Monday in
+      // November — and the check would be worthless. Costs 2 credits, not 1.
       const url = 'https://api.the-odds-api.com/v4/sports/' + leagueToSport_(league)
-        + '/scores/?dateFormat=iso&apiKey=' + encodeURIComponent(oddsApiKey_());
+        + '/scores/?daysFrom=3&dateFormat=iso&apiKey=' + encodeURIComponent(oddsApiKey_());
       const res  = UrlFetchApp.fetch(url, { muteHttpExceptions: true, method: 'get' });
       const code = res.getResponseCode();
       if (code !== 200) {
@@ -1525,16 +1531,28 @@ function checkOddsApi() {
 
       const games = JSON.parse(res.getContentText()) || [];
       const done  = games.filter(function (g) { return g.completed; });
-      out.push(league + ': OK, ' + games.length + ' game(s) in the feed, ' + done.length + ' completed');
+      anyFinished += done.length;
+
+      out.push(league + ': OK — ' + games.length + ' game(s) in the feed, '
+        + done.length + ' finished in the last 3 days');
       done.slice(0, 3).forEach(function (g) {
         const s = (g.scores || []).map(function (x) { return x.name + ' ' + x.score; }).join(', ');
-        out.push('    ' + g.away_team + ' @ ' + g.home_team + ' - ' + (s || 'no scores') + '  [' + g.id + ']');
+        out.push('    ' + g.away_team + ' @ ' + g.home_team + ' — ' + (s || 'no scores') + '  [' + g.id + ']');
       });
       out.push('    credits left this month: ' + (res.getHeaders()['x-requests-remaining'] || 'unknown'));
     } catch (e) {
-      out.push(league + ': FAILED - ' + e.message);
+      out.push(league + ': FAILED — ' + e.message);
     }
   }
+
+  out.push('');
+  out.push(anyFinished
+    ? anyFinished + ' finished game(s) available — testAutoGradeLive() can run an '
+      + 'end-to-end check against a real result right now.'
+    : 'No finished games in the last 3 days, so there is nothing for auto-grading to '
+      + 'do and testAutoGradeLive() has nothing to work with. Not a failure — the API '
+      + 'key works, the season just has not started. Try again after the first slate.');
+
   const msg = out.join('\n');
   Logger.log(msg);
   return msg;

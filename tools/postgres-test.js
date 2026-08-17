@@ -219,7 +219,7 @@ function harness(sheets, props, scores) {
     pgReadPicks_, sheetReadPicks_, getBoard_, runAutoGrade_, runSelfTest,
     submitPicks_, getMyPicks_, isAdminEmail_, storageKind_, checkSetup,
     upsertResults_, setPickStatuses_, gradePick_,
-    testAutoGradeLive, findFinishedGame_, livePicksFor_
+    testAutoGradeLive, findFinishedGame_, livePicksFor_, checkOddsApi
   };`)(...names.map((n) => env[n]));
 
   return { api, pg, store, oddsCalls };
@@ -708,6 +708,38 @@ section("what a swapped feed can and cannot prove");
   ok(/^LIVE TEST PASSED/.test(msg), "a consistently swapped feed is still self-consistent");
   ok(/17-31/.test(msg), "and the score it reports is the one it graded from",
      (msg.match(/Real game used[^\n]*/) || [])[0]);
+}
+
+section("checkOddsApi asks a question that can actually be answered");
+{
+  // The bug: without daysFrom the scores endpoint returns only live and
+  // upcoming games, so "0 completed" was the answer on every day of the year.
+  const upcomingOnly = { NFL: [
+    { id: "u1", completed: false, home_team: KC, away_team: BUF, scores: null,
+      commence_time: "", last_update: "" }
+  ], NCAAF: [] };
+
+  const { api, oddsCalls } = harness({ Picks: [HEAD], Results: [], Users: [["email","role"]] },
+                                     PG_ON, upcomingOnly);
+  const msg = api.checkOddsApi();
+  ok(oddsCalls.every((u) => /daysFrom=3/.test(u)), "every scores call asks for finished games",
+     oddsCalls[0]);
+  ok(/No finished games in the last 3 days/.test(msg), "and says plainly when there are none",
+     msg.split("\n").pop());
+  ok(/Not a failure/.test(msg), "without calling that a failure");
+  ok(!/FAILED/.test(msg), "and not reporting one");
+
+  const finished = { NFL: [
+    { id: "f1", completed: true, home_team: KC, away_team: BUF,
+      scores: [{ name: KC, score: "31" }, { name: BUF, score: "17" }],
+      commence_time: "", last_update: "" }
+  ], NCAAF: [] };
+  const msg2 = harness({ Picks: [HEAD], Results: [], Users: [["email","role"]] },
+                       PG_ON, finished).api.checkOddsApi();
+  ok(/1 finished game\(s\) available/.test(msg2), "and points at the next step when there are",
+     msg2.split("\n").pop());
+  ok(/testAutoGradeLive\(\)/.test(msg2), "naming it");
+  ok(/Kansas City Chiefs 31/.test(msg2), "listing the real score it found");
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

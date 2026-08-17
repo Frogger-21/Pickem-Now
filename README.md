@@ -97,10 +97,17 @@ six-hourly trigger calls, so it exercises the row arithmetic and the status
 write-back rather than just the arithmetic. The one thing it can't cover is
 `fetchScores_`, since that needs the network.
 
-**`checkOddsApi()`** — covers the other half. One call, **1 credit**, proving
-the API key works and printing what the scores feed currently holds plus your
-remaining credits. Out of season it reports an empty feed; that's a pass, not a
-failure. Run it on a game day to see real games and their event ids.
+**`checkOddsApi()`** — covers the other half. Proves the API key works and
+reports how many games actually **finished in the last three days**, with their
+scores and event ids, plus your remaining credits.
+
+It asks with `daysFrom=3`, which costs 2 credits per league rather than 1. That
+is not optional: without `daysFrom` the scores endpoint returns only live and
+upcoming fixtures, so "0 completed" would be the answer on every day of the
+year — including a Monday in November. A check that always says zero is worse
+than no check.
+
+Out of season it says there is nothing to grade and that this is not a failure.
 
 **`testAutoGradeLive()`** — the one that joins the two together. `runSelfTest`
 feeds itself invented scores, so it never exercises `fetchScores_`, the
@@ -361,7 +368,7 @@ node tools/grading-test.js    # 48 assertions: spreads, totals, moneylines, edge
 node tools/pipeline-test.js   # 60 assertions: full runs against a fake Sheet, plus layering
 node tools/build-test.js      # 11 assertions: the real Netlify build
 node tools/backtest-test.js   # 42 assertions: the audit and the backtest
-node tools/postgres-test.js   # 98 assertions: the whole stack on a fake PostgREST
+node tools/postgres-test.js   # 105 assertions: the whole stack on a fake PostgREST
 ```
 
 `pipeline-test.js` builds a fake spreadsheet and a fake Odds API, then checks
