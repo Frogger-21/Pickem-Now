@@ -211,6 +211,8 @@ function usingPostgresSafe_() {
 function readPicks_()               { return usingPostgres_() ? pgReadPicks_()               : sheetReadPicks_(); }
 function setPickStatuses_(updates)  { if (!updates || !updates.length) return 0;
                                       return usingPostgres_() ? pgSetPickStatuses_(updates)  : sheetSetPickStatuses_(updates); }
+function setPickWeeks_(updates)     { if (!updates || !updates.length) return 0;
+                                      return usingPostgres_() ? pgSetPickWeeks_(updates)     : sheetSetPickWeeks_(updates); }
 function insertPicks_(picks)        { if (!picks || !picks.length) return 0;
                                       return usingPostgres_() ? pgInsertPicks_(picks)        : sheetInsertPicks_(picks); }
 function deletePickKeys_(keys)      { if (!keys || !keys.length) return 0;
@@ -271,23 +273,27 @@ function sheetReadPicks_() {
  * cell — a Sunday with forty pending picks would otherwise be forty round
  * trips to Sheets, which is slow enough to hit the script time limit.
  */
-function sheetSetPickStatuses_(updates) {
+function sheetSetPickField_(field, updates) {
   if (!updates || !updates.length) return 0;
   const sh = openSheet_(PICKS_SHEET);
   const data = sh.getDataRange().getValues();
   if (data.length < 2) return 0;
   const H = headerIndex_(data[0]);
-  const col = sh.getRange(2, H.status + 1, data.length - 1, 1).getValues();
+  if (H[field] === undefined) throw new Error('no such column: ' + field);
+  const col = sh.getRange(2, H[field] + 1, data.length - 1, 1).getValues();
   let n = 0;
   for (const u of updates) {
     const ix = u._key - 2;
     if (ix < 0 || ix >= col.length) continue;
-    col[ix][0] = u.status;
+    col[ix][0] = u[field];
     n++;
   }
-  if (n) sh.getRange(2, H.status + 1, col.length, 1).setValues(col);
+  if (n) sh.getRange(2, H[field] + 1, col.length, 1).setValues(col);
   return n;
 }
+
+function sheetSetPickStatuses_(updates) { return sheetSetPickField_('status', updates); }
+function sheetSetPickWeeks_(updates)    { return sheetSetPickField_('week',   updates); }
 
 /** Append picks. Objects in, not rows. */
 function sheetInsertPicks_(picks) {
@@ -572,20 +578,24 @@ function pgReadPicks_() {
 /** PostgREST cannot set different values across rows in one request, but it
     can set one value across many. Grouping by verdict means at most three
     calls however big the Sunday. */
-function pgSetPickStatuses_(updates) {
-  const byStatus = {};
-  for (const u of updates) (byStatus[u.status] = byStatus[u.status] || []).push(u._key);
+function pgSetPickField_(field, updates) {
+  const byValue = {};
+  for (const u of updates) (byValue[u[field]] = byValue[u[field]] || []).push(u._key);
 
   let n = 0;
-  for (const status of Object.keys(byStatus)) {
-    for (const ids of pgChunk_(byStatus[status], PG_ID_CHUNK)) {
-      pgFetch_('patch', 'picks?id=in.' + encodeURIComponent(pgInList_(ids)),
-               { status: status });
+  for (const value of Object.keys(byValue)) {
+    for (const ids of pgChunk_(byValue[value], PG_ID_CHUNK)) {
+      const body = {};
+      body[field] = value;
+      pgFetch_('patch', 'picks?id=in.' + encodeURIComponent(pgInList_(ids)), body);
       n += ids.length;
     }
   }
   return n;
 }
+
+function pgSetPickStatuses_(updates) { return pgSetPickField_('status', updates); }
+function pgSetPickWeeks_(updates)    { return pgSetPickField_('week',   updates); }
 
 function pgInsertPicks_(picks) {
   let n = 0;
@@ -2274,5 +2284,181 @@ function testAutoGradeLive() {
     return msg;
   } finally {
     selfTestCleanup_();
+  }
+}
+
+// ===== WEEK NORMALISATION ====================================================
+// Week labels arrived from the Sheet as stringified dates, which sort wrongly
+// and let one slate split in two when somebody submitted a day early.
+//
+// The scheme:
+//   season   2025-26      August to July, so January bowls stay in the season
+//                         that started the previous August
+//   week     2025-10-01   the slate's Wednesday. Snapping to the NEAREST
+//                         Wednesday merges a day-early and a day-late entry
+//                         onto the same slate, which is what both meant.
+//   weekNo   5            position among that season's slates. Derived, so
+//                         there is no calendar table to maintain.
+//
+// weekNo is YOUR fifth slate, which is not the same as official CFB week 5.
+// Keep them separate: the official number should come from real kickoff dates
+// once results fill in, or every join against SP+ and EPA is quietly off by
+// one.
+//
+//   weekPlanReport()          read-only. Shows every old -> new pair.
+//   applyWeekNormalization()  the write. Refuses to run without the argument.
+
+function seasonOf_(ymd) {
+  const y = Number(ymd.slice(0, 4)), m = Number(ymd.slice(5, 7));
+  const start = m >= 8 ? y : y - 1;
+  return start + '-' + String(start + 1).slice(2);
+}
+
+/** Nearest Wednesday, as YYYY-MM-DD. Uses UTC arithmetic throughout so the
+    script's timezone cannot shift a date across midnight. */
+function nearestWednesday_(ymd) {
+  const y = +ymd.slice(0, 4), m = +ymd.slice(5, 7), d = +ymd.slice(8, 10);
+  const base = Date.UTC(y, m - 1, d);
+  let delta = 3 - new Date(base).getUTCDay();     // 3 = Wednesday
+  if (delta >  3) delta -= 7;
+  if (delta < -3) delta += 7;
+  const t = new Date(base + delta * 86400000);
+  return t.getUTCFullYear() + '-'
+       + ('0' + (t.getUTCMonth() + 1)).slice(-2) + '-'
+       + ('0' + t.getUTCDate()).slice(-2);
+}
+
+/** old label -> { newWeek, season, weekNo, count, users }. */
+function weekPlan_() {
+  const picks = readPicks_().filter(function (p) {
+    return p.week && p.week !== SELFTEST_WEEK;
+  });
+
+  const byOld = {};
+  for (const p of picks) {
+    if (!byOld[p.week]) {
+      const ymd = weekKey_(p.week);
+      const parsed = /^\d{4}-\d{2}-\d{2}$/.test(ymd);
+      const nw = parsed ? nearestWednesday_(ymd) : null;
+      byOld[p.week] = {
+        old: p.week, parsed: parsed, newWeek: nw,
+        season: nw ? seasonOf_(nw) : null,
+        weekNo: null, count: 0, users: {}
+      };
+    }
+    byOld[p.week].count++;
+    byOld[p.week].users[p.user] = true;
+  }
+
+  // Number each season's slates in date order.
+  const seasons = {};
+  for (const k of Object.keys(byOld)) {
+    const e = byOld[k];
+    if (e.newWeek) (seasons[e.season] = seasons[e.season] || {})[e.newWeek] = true;
+  }
+  const no = {};
+  for (const s of Object.keys(seasons)) {
+    Object.keys(seasons[s]).sort().forEach(function (w, i) { no[s + '|' + w] = i + 1; });
+  }
+  for (const k of Object.keys(byOld)) {
+    const e = byOld[k];
+    if (e.newWeek) e.weekNo = no[e.season + '|' + e.newWeek];
+  }
+  return byOld;
+}
+
+/** Read-only. Shows exactly what applyWeekNormalization would do. */
+function weekPlanReport() {
+  const plan = weekPlan_();
+  const keys = Object.keys(plan);
+  if (!keys.length) return 'No picks with a week label.';
+
+  // Group by destination so merges are obvious.
+  const dest = {};
+  for (const k of keys) {
+    const e = plan[k];
+    const d = e.newWeek || '(unparsed)';
+    (dest[d] = dest[d] || []).push(e);
+  }
+
+  const out = [];
+  out.push('WEEK NORMALISATION - DRY RUN. Nothing has been changed.');
+  out.push('');
+  out.push('  season   wk  new week      picks  from');
+  out.push('  -------- --  ----------    -----  --------------------------------');
+
+  let merges = 0, unparsed = 0;
+  for (const d of Object.keys(dest).sort()) {
+    const group = dest[d];
+    const first = group[0];
+    if (!first.newWeek) { unparsed += group.length; continue; }
+
+    const total = group.reduce(function (n, e) { return n + e.count; }, 0);
+    const people = {};
+    for (const e of group) for (const u of Object.keys(e.users)) people[u] = true;
+
+    out.push('  ' + first.season + '  ' + ('0' + first.weekNo).slice(-2)
+      + '  ' + d + '   ' + ('   ' + total).slice(-4)
+      + '   ' + group[0].old.slice(0, 15));
+    for (let i = 1; i < group.length; i++) {
+      out.push('                                     + ' + group[i].old.slice(0, 15));
+    }
+    if (group.length > 1) {
+      merges++;
+      out.push('     ^^ MERGE of ' + group.length + ' labels into one slate, '
+        + Object.keys(people).length + ' player(s) total');
+    }
+  }
+
+  if (unparsed) {
+    out.push('');
+    out.push('UNPARSED - left exactly as they are:');
+    for (const k of keys) if (!plan[k].parsed) out.push('  "' + k + '" (' + plan[k].count + ' pick(s))');
+  }
+
+  out.push('');
+  out.push(merges
+    ? merges + ' merge(s) found. Merging is the point: a slate split across two'
+      + ' dates\n  currently counts as two weeks, which hands somebody a week win'
+      + ' against\n  a field of one.'
+    : 'No merges needed - every slate already sits on one label.');
+  out.push('');
+  out.push('Nothing was written. Run applyWeekNormalization(true) to apply this.');
+
+  const msg = out.join('\n');
+  Logger.log(msg);
+  return msg;
+}
+
+/**
+ * Rewrite the week label on every pick. Takes an argument you must pass on
+ * purpose, so it cannot be run by picking it out of the dropdown by accident.
+ */
+function applyWeekNormalization(confirm) {
+  if (confirm !== true) {
+    return 'Refusing to run. This rewrites the week label on every pick.\n'
+      + '  Read weekPlanReport() first, then call applyWeekNormalization(true).';
+  }
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) return 'FAILED: another run is in progress';
+  try {
+    const plan = weekPlan_();
+    const updates = [];
+    for (const p of readPicks_()) {
+      const e = plan[p.week];
+      if (!e || !e.newWeek || e.newWeek === p.week) continue;
+      updates.push({ _key: p._key, week: e.newWeek });
+    }
+    if (!updates.length) return 'Nothing to change - every week is already normalised.';
+
+    const n = setPickWeeks_(updates);
+    const msg = 'Rewrote the week label on ' + n + ' pick(s).\n'
+      + '  Run compareBackends() if the Sheet still matters to you: it will now\n'
+      + '  report differences, because the Sheet was deliberately left alone.';
+    Logger.log(msg);
+    return msg;
+  } finally {
+    lock.releaseLock();
   }
 }

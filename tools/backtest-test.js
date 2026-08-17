@@ -67,7 +67,7 @@ function load(pickRows) {
   };
   const names = Object.keys(env);
   return new Function(...names,
-    SRC + "return { auditGrades, backtestWeek, backtestTemplate, splitMatchup_, readWeekPicks_, weekKey_, getWeeks_ };"
+    SRC + "return { auditGrades, backtestWeek, backtestTemplate, splitMatchup_, readWeekPicks_, weekKey_, getWeeks_, seasonOf_, nearestWednesday_, weekPlanReport, applyWeekNormalization };"
   )(...names.map((n) => env[n]));
 }
 
@@ -328,6 +328,97 @@ section("the dropdown order is actually chronological");
   ok(weeks[3].indexOf("Sep 03") === 0, "oldest week last", weeks.join(" | "));
   ok(weeks[1].indexOf("Oct 08") === 0 && weeks[2].indexOf("Sep 24") === 0,
      "and the middle is right too", weeks.join(" | "));
+}
+
+// ------------------------------------------------------- week normalisation
+section("seasons run August to July");
+{
+  const api = load([HEAD]);
+  const s = api.seasonOf_;
+  ok(s("2025-09-03") === "2025-26", "September opens a season", s("2025-09-03"));
+  ok(s("2025-12-10") === "2025-26", "December is the same season", s("2025-12-10"));
+  ok(s("2026-01-05") === "2025-26", "a January bowl stays in it", s("2026-01-05"));
+  ok(s("2026-08-26") === "2026-27", "August opens the next one", s("2026-08-26"));
+  ok(s("2026-07-31") === "2025-26", "July is still the old one", s("2026-07-31"));
+}
+
+section("dates snap to the NEAREST Wednesday");
+{
+  const api = load([HEAD]);
+  const w = api.nearestWednesday_;
+  ok(w("2025-10-01") === "2025-10-01", "a Wednesday is already home", w("2025-10-01"));
+  // The real bug: Rish submitted Tue Sep 30 for the Oct 1 slate.
+  ok(w("2025-09-30") === "2025-10-01", "a day early joins the slate it meant", w("2025-09-30"));
+  ok(w("2025-10-02") === "2025-10-01", "and so does a day late", w("2025-10-02"));
+  ok(w("2025-10-04") === "2025-10-01", "Saturday belongs to the Wednesday behind it", w("2025-10-04"));
+  ok(w("2025-10-05") === "2025-10-08", "Sunday to the one ahead", w("2025-10-05"));
+  // Month and year boundaries, where naive arithmetic goes wrong.
+  ok(w("2025-12-31") === "2025-12-31", "a Wednesday on new year's eve", w("2025-12-31"));
+  ok(w("2026-01-01") === "2025-12-31", "and the day after crosses the year", w("2026-01-01"));
+  ok(w("2025-11-30") === "2025-12-03", "crossing a month end", w("2025-11-30"));
+}
+
+section("the plan merges a split slate and leaves the rest alone");
+{
+  // Your real shape: 8 players a week, with one person a day early.
+  const rows = [HEAD];
+  let n = 0;
+  const add = (week, user) => rows.push(["p" + (++n), week, user + "@x.com", user,
+    "NFL", "g" + n, M, "moneyline", "ml", KC, "", "{}", "win", ""]);
+
+  const users = ["Ann","Bob","Cid","Dee","Eve","Fay","Gil","Hal"];
+  for (const u of users) add("Wed Sep 24 2025 00:00:00 GMT-0500 (Central Daylight Time)", u);
+  for (const u of users.slice(0, 7)) add("Wed Oct 01 2025 00:00:00 GMT-0500 (Central Daylight Time)", u);
+  add("Tue Sep 30 2025 00:00:00 GMT-0500 (Central Daylight Time)", "Hal");   // a day early
+
+  const api = load(rows);
+  const msg = api.weekPlanReport();
+
+  ok(/DRY RUN\. Nothing has been changed/.test(msg), "it announces itself as a dry run");
+  ok(/MERGE of 2 labels into one slate, 8 player\(s\) total/.test(msg),
+     "the split slate merges back to a full field", (msg.match(/\^\^ MERGE[^\n]*/) || [])[0]);
+  ok(/2025-26  01  2025-09-24/.test(msg), "the first slate is week 1", (msg.match(/2025-09-24[^\n]*/) || [])[0]);
+  ok(/2025-26  02  2025-10-01/.test(msg), "and the merged one is week 2", (msg.match(/2025-10-01[^\n]*/) || [])[0]);
+
+  // Read-only.
+  const before = JSON.stringify(rows);
+  api.weekPlanReport();
+  ok(JSON.stringify(rows) === before, "and wrote nothing");
+}
+
+section("applying it needs saying so on purpose");
+{
+  const rows = [HEAD,
+    ["p1", "Tue Sep 30 2025 00:00:00 GMT-0500 (Central Daylight Time)", "a@x.com", "Ann",
+     "NFL", "g1", M, "moneyline", "ml", KC, "", "{}", "win", ""]];
+  const api = load(rows);
+
+  ok(/^Refusing to run/.test(api.applyWeekNormalization()), "a bare call refuses",
+     api.applyWeekNormalization().split("\n")[0]);
+  ok(/^Refusing to run/.test(api.applyWeekNormalization(false)), "so does false");
+  ok(rows[1][1].indexOf("Tue Sep 30") === 0, "and neither touched the data", rows[1][1].slice(0, 15));
+
+  const done = api.applyWeekNormalization(true);
+  ok(/Rewrote the week label on 1 pick/.test(done), "the explicit call applies it", done.split("\n")[0]);
+  ok(rows[1][1] === "2025-10-01", "and the label is normalised", rows[1][1]);
+
+  ok(/^Nothing to change/.test(api.applyWeekNormalization(true)), "running again is a no-op");
+}
+
+section("an unparseable label is left alone rather than guessed at");
+{
+  const rows = [HEAD,
+    ["p1", "Week 3", "a@x.com", "Ann", "NFL", "g1", M, "moneyline", "ml", KC, "", "{}", "win", ""],
+    ["p2", "Wed Oct 01 2025 00:00:00 GMT-0500 (Central Daylight Time)", "b@x.com", "Bob",
+     "NFL", "g2", M, "moneyline", "ml", KC, "", "{}", "win", ""]];
+  const api = load(rows);
+  const msg = api.weekPlanReport();
+  ok(/UNPARSED - left exactly as they are/.test(msg), "it is reported, not silently dropped");
+  ok(/"Week 3" \(1 pick\(s\)\)/.test(msg), "and named", (msg.match(/"Week 3"[^\n]*/) || [])[0]);
+
+  api.applyWeekNormalization(true);
+  ok(rows[1][1] === "Week 3", "and survives the write untouched", rows[1][1]);
+  ok(rows[2][1] === "2025-10-01", "while the parseable one is normalised", rows[2][1]);
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
