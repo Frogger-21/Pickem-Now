@@ -1,9 +1,9 @@
 /* Runs the whole backend against a fake PostgREST, then against a fake Sheet,
    and checks the two produce the same answers.
 
-   The fake implements only what the code actually uses — select with paging
+   The fake implements only what the code actually uses - select with paging
    and ordering, insert, upsert via merge-duplicates, patch and delete with an
-   in.() filter — but it enforces the schema's constraints, because the traps
+   in.() filter - but it enforces the schema's constraints, because the traps
    in this migration are constraint traps: '' is not a valid status, meta must
    arrive as an object rather than a JSON string, and a null score must not
    become zero.
@@ -351,7 +351,7 @@ section("a row Postgres rejects is named, not buried in a stack trace");
   try { msg = api.migrateSheetsToPostgres(); } catch (e) { crashed = true; msg = e.message; }
 
   ok(!crashed, "the migration reports rather than throwing", msg.slice(0, 80));
-  ok(/REJECTED — 1 pick/.test(msg), "the bad row is counted", (msg.match(/REJECTED[^\n]*/) || [])[0]);
+  ok(/REJECTED - 1 pick/.test(msg), "the bad row is counted", (msg.match(/REJECTED[^\n]*/) || [])[0]);
   ok(/bad1:/.test(msg), "and named by id");
   ok(/picks_status_check/.test(msg), "with the constraint that refused it");
   ok(/picks   : 4 copied/.test(msg), "the other four still went through", (msg.match(/picks +:[^\n]*/) || [])[0]);
@@ -580,7 +580,7 @@ section("checkSetup stops nagging about a Sheet no longer in use");
   const empty = harness({ Picks: [], Results: [], Users: [] },
                         { ...SUPA, SUPABASE_SERVICE_KEY: "x".repeat(64),
                           SHEET_ID: "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcd" }).api.checkSetup();
-  ok(/0 pick row\(s\)  — empty, so there is nothing to migrate/.test(empty),
+  ok(/0 pick row\(s\)  - empty, so there is nothing to migrate/.test(empty),
      "an empty sheet says there is nothing to migrate", (empty.match(/Sheet[^\n]*/) || [])[0]);
 }
 
@@ -588,7 +588,7 @@ section("checkSetup names a property holding the wrong kind of value");
 {
   // The real mistake this exists for: the whole Sheets URL pasted into
   // SHEET_ID, which surfaces from SpreadsheetApp as "Illegal spreadsheet id or
-  // key" — accurate, but it names neither the property nor a right answer.
+  // key" - accurate, but it names neither the property nor a right answer.
   const bad = {
     ...PG_ON,
     SUPABASE_SERVICE_KEY: "x".repeat(64),      // valid, so SHEET_ID is the only fault
@@ -693,7 +693,7 @@ section("what a swapped feed can and cannot prove");
 {
   // Worth being honest about the limit. The feed's score array names its teams,
   // so a *consistently* swapped feed is just the same game seen from the other
-  // side and grades correctly — this test cannot detect that, and no test that
+  // side and grades correctly - this test cannot detect that, and no test that
   // derives its expectations from the feed could. What it does guarantee is
   // that the score reported is the score graded from, so the two never drift.
   const swapped = { NFL: [{ id: "sw", completed: true, home_team: KC, away_team: BUF,
@@ -702,7 +702,7 @@ section("what a swapped feed can and cannot prove");
     commence_time: "", last_update: "" }], NCAAF: [] };
   const { api } = harness({ Picks: [HEAD], Results: [], Users: [["email","role"]] }, PG_ON, swapped);
   const msg = api.testAutoGradeLive();
-  // Expectations follow the score, so a consistent swap still grades correctly —
+  // Expectations follow the score, so a consistent swap still grades correctly -
   // it is the same game seen from the other side. What must hold is that the
   // winner it names matches the scores it read.
   ok(/^LIVE TEST PASSED/.test(msg), "a consistently swapped feed is still self-consistent");

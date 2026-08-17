@@ -1,6 +1,6 @@
 /* End-to-end test of runAutoGrade_ and submitPicks_ against a fake Sheet.
    The pure grading rules are covered by grading-test.js; what this checks is
-   the plumbing around them — that grades land on the right rows, that the
+   the plumbing around them - that grades land on the right rows, that the
    credit-saving short circuits actually fire, and that resubmitting replaces
    instead of duplicating.
 

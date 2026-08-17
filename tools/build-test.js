@@ -2,7 +2,7 @@
 
    The bug this exists to prevent: apiConfigured() used to compare CONFIG.API
    against a named placeholder constant, but sed substitutes the token
-   everywhere in the file — including in the line defining that constant. Both
+   everywhere in the file - including in the line defining that constant. Both
    sides became the real URL, so the check reported "not configured" exactly
    when injection had succeeded. A hand-written test of the same logic passed,
    because it never ran the actual substitution.

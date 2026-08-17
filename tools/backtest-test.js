@@ -1,4 +1,4 @@
-/* Tests auditGrades() and backtestWeek() — the two ways to check grading
+/* Tests auditGrades() and backtestWeek() - the two ways to check grading
    against weeks that are too old for the scores feed.
 
    The audit matters most and is the easiest to get wrong in the dangerous
@@ -81,7 +81,7 @@ const section = (t) => console.log("\n" + t);
 const HEAD = ['id','week','email','user','league','gameId','matchup',
   'market','kind','selection','odds','meta','status','ts'];
 
-// Bills @ Chiefs — Chiefs are home. The audit never learns the score.
+// Bills @ Chiefs - Chiefs are home. The audit never learns the score.
 const M = "Buffalo Bills @ Kansas City Chiefs";
 const KC = "Kansas City Chiefs", BUF = "Buffalo Bills";
 
@@ -116,7 +116,7 @@ section("the audit stays quiet on grades that are consistent");
     p("Bob", "moneyline", "ml", BUF, {}, "loss")
   ])), "opposite moneylines");
 
-  // Different numbers are genuinely allowed to agree — 7 covers -6.5 and pushes +7.
+  // Different numbers are genuinely allowed to agree - 7 covers -6.5 and pushes +7.
   ok(clean(audit([
     p("Ann", "spread", "favorite", KC,  { line: -6.5 }, "win"),
     p("Bob", "spread", "underdog", BUF, { line:  7   }, "push")
@@ -127,7 +127,7 @@ section("the audit stays quiet on grades that are consistent");
     p("Bob", "total", "under", "Under", { total: 48 }, "win")
   ])), "different totals may both be right");
 
-  // Same side, same view — not a contradiction.
+  // Same side, same view - not a contradiction.
   ok(clean(audit([
     p("Ann", "spread", "favorite", KC, { line: -6.5 }, "win"),
     p("Bob", "spread", "favorite", KC, { line: -6.5 }, "win")

@@ -68,7 +68,7 @@ function propWarning_(key, v) {
 
   if (key === 'SHEET_ID') {
     if (looksLikeUrl || v.indexOf('/') >= 0) {
-      return 'that is a URL. SHEET_ID is only the middle of the Sheet\'s address — '
+      return 'that is a URL. SHEET_ID is only the middle of the Sheet\'s address - '
         + 'the part between /d/ and /edit, around 44 characters, no slashes.';
     }
     if (v.length < 20) return 'too short for a Sheet ID (expect around 44 characters).';
@@ -86,7 +86,7 @@ function propWarning_(key, v) {
     // "permission denied ... GRANT SELECT TO anon". Name it here instead.
     if (v.indexOf('sb_publishable_') === 0) {
       return 'that is the PUBLISHABLE key. RLS is on with no policies, so it can '
-        + 'read nothing. Use the secret key (sb_secret_...) — Supabase warns you '
+        + 'read nothing. Use the secret key (sb_secret_...) - Supabase warns you '
         + 'when revealing it, which is expected: it only ever lives here.';
     }
     if (jwtRole_(v) === 'anon') {
@@ -110,7 +110,7 @@ function checkSetup() {
       : (k === 'SUPABASE_URL' ? v : 'set (' + v.length + ' chars)');
     out.push(k.padEnd(21) + ': ' + shown);
     const warn = propWarning_(k, v);
-    if (warn) { out.push(''.padEnd(21) + '  ^^ WRONG VALUE — ' + warn); bad++; }
+    if (warn) { out.push(''.padEnd(21) + '  ^^ WRONG VALUE - ' + warn); bad++; }
   }
 
   let kind = '(invalid)';
@@ -129,9 +129,9 @@ function checkSetup() {
       const ss = SpreadsheetApp.openById(sheetId_());
       const n = sheetReadPicks_().length;
       out.push('Sheet     : opens OK, "' + ss.getName() + '", ' + n + ' pick row(s)'
-        + (n === 0 ? '  — empty, so there is nothing to migrate' : ''));
+        + (n === 0 ? '  - empty, so there is nothing to migrate' : ''));
     } catch (e) {
-      out.push('Sheet     : FAILED — ' + e.message);
+      out.push('Sheet     : FAILED - ' + e.message);
     }
   }
 
@@ -142,7 +142,7 @@ function checkSetup() {
       out.push('Postgres  : reachable, picks table readable'
         + (n && n.length ? '' : ' (currently empty)'));
     } catch (e) {
-      out.push('Postgres  : FAILED — ' + e.message);
+      out.push('Postgres  : FAILED - ' + e.message);
     }
   } else {
     out.push('Postgres  : not configured');
@@ -151,8 +151,8 @@ function checkSetup() {
   if (bad) {
     out.push('');
     out.push(bad === 1
-      ? '1 property has the wrong kind of value in it — fix that before anything'
-      : bad + ' properties have the wrong kind of value in them — fix those before anything');
+      ? '1 property has the wrong kind of value in it - fix that before anything'
+      : bad + ' properties have the wrong kind of value in them - fix those before anything');
     out.push('else. Project Settings > Script Properties.');
   }
 
@@ -428,7 +428,7 @@ function pgFetch_(method, path, body, prefer) {
   if (code < 200 || code >= 300) {
     // A 404 on a table that exists almost always means privileges, not a typo.
     const hint = code === 404
-      ? ' (a 404 here usually means the table is not exposed to the API — re-run db/schema.sql, which grants service_role explicitly)'
+      ? ' (a 404 here usually means the table is not exposed to the API - re-run db/schema.sql, which grants service_role explicitly)'
       : '';
     throw new Error('Supabase ' + method.toUpperCase() + ' ' + path + ' -> ' + code + ': ' + text.slice(0, 300) + hint);
   }
@@ -659,7 +659,7 @@ function doGet(e) {
         storage: storageKind_(),
         usage:   'add ?fn=<name> to this URL',
         fn:      GET_FNS,
-        example: 'https://…/exec?fn=board'
+        example: 'https://.../exec?fn=board'
       }));
     }
     if (p.fn === 'odds')    return asJson(ok(getOdds_(String(p.league || ''), p.weekStart, { noCache: String(p.nocache) === '1' })));
@@ -1106,7 +1106,7 @@ function runAutoGrade_(opts) {
     return !!p.gameId;                                      // nothing to join on
   });
   if (!pending.length) {
-    return { graded: 0, stillPending: 0, creditsUsed: 0, note: 'nothing pending — no API call made' };
+    return { graded: 0, stillPending: 0, creditsUsed: 0, note: 'nothing pending - no API call made' };
   }
 
   // Only fetch games we don't already have a completed result for.
@@ -1217,7 +1217,7 @@ function clearExistingPicks_(email, week) {
     if (p.email.trim().toLowerCase() !== needle) continue;
     if (p.week !== week) continue;
     if (p.status && p.status !== 'pending') {
-      throw new Error('Week ' + week + ' has already been graded — picks are locked.');
+      throw new Error('Week ' + week + ' has already been graded - picks are locked.');
     }
     victims.push(p._key);
   }
@@ -1587,24 +1587,24 @@ function checkOddsApi() {
       const done  = games.filter(function (g) { return g.completed; });
       anyFinished += done.length;
 
-      out.push(league + ': OK — ' + games.length + ' game(s) in the feed, '
+      out.push(league + ': OK - ' + games.length + ' game(s) in the feed, '
         + done.length + ' finished in the last 3 days');
       done.slice(0, 3).forEach(function (g) {
         const s = (g.scores || []).map(function (x) { return x.name + ' ' + x.score; }).join(', ');
-        out.push('    ' + g.away_team + ' @ ' + g.home_team + ' — ' + (s || 'no scores') + '  [' + g.id + ']');
+        out.push('    ' + g.away_team + ' @ ' + g.home_team + ' - ' + (s || 'no scores') + '  [' + g.id + ']');
       });
       out.push('    credits left this month: ' + (res.getHeaders()['x-requests-remaining'] || 'unknown'));
     } catch (e) {
-      out.push(league + ': FAILED — ' + e.message);
+      out.push(league + ': FAILED - ' + e.message);
     }
   }
 
   out.push('');
   out.push(anyFinished
-    ? anyFinished + ' finished game(s) available — testAutoGradeLive() can run an '
+    ? anyFinished + ' finished game(s) available - testAutoGradeLive() can run an '
       + 'end-to-end check against a real result right now.'
     : 'No finished games in the last 3 days, so there is nothing for auto-grading to '
-      + 'do and testAutoGradeLive() has nothing to work with. Not a failure — the API '
+      + 'do and testAutoGradeLive() has nothing to work with. Not a failure - the API '
       + 'key works, the season just has not started. Try again after the first slate.');
 
   const msg = out.join('\n');
@@ -1673,7 +1673,7 @@ function backtestTemplate(week) {
 
   const msg = 'Fill in the real final scores and run this:\n\n'
     + "backtestWeek('" + week + "', {\n" + lines.join('\n') + '\n});\n\n'
-    + 'Scores go in as [home, away] — the matchup reads "away @ home", so the\n'
+    + 'Scores go in as [home, away] - the matchup reads "away @ home", so the\n'
     + 'second team named is the first number.';
   Logger.log(msg);
   return msg;
@@ -1714,7 +1714,7 @@ function backtestWeek(week, scores) {
   }
 
   const out = [];
-  out.push('BACKTEST ' + week + ' — ' + picks.length + ' pick(s)');
+  out.push('BACKTEST ' + week + ' - ' + picks.length + ' pick(s)');
   out.push('  auto-grader agreed with the sheet : ' + agreed.filter(function (a) { return !a.wasPending; }).length);
   out.push('  disagreed                         : ' + disagreed.length);
   out.push('  previously ungraded, now decided  : ' + agreed.filter(function (a) { return a.wasPending; }).length);
@@ -1723,7 +1723,7 @@ function backtestWeek(week, scores) {
 
   if (disagreed.length) {
     out.push('');
-    out.push('DISAGREEMENTS — one of the two is wrong, worth looking at:');
+    out.push('DISAGREEMENTS - one of the two is wrong, worth looking at:');
     for (const d of disagreed) {
       out.push('  ' + d.pick.user + '  ' + d.pick.matchup + '  ' + d.pick.market + ' ' + d.pick.kind
         + ' ' + d.pick.selection + lineNote_(d.pick)
@@ -1732,7 +1732,7 @@ function backtestWeek(week, scores) {
   }
   if (ungraded.length) {
     out.push('');
-    out.push('DECLINED — these would stay pending in a real run:');
+    out.push('DECLINED - these would stay pending in a real run:');
     for (const u of ungraded) {
       out.push('  ' + u.pick.user + '  ' + u.pick.matchup + '  ' + u.pick.market + ': ' + u.why + '  (row ' + u.pick.row + ')');
     }
@@ -1841,10 +1841,10 @@ function auditGrades() {
   }
 
   const msg = problems.length
-    ? 'GRADE AUDIT — ' + problems.length + ' contradiction(s) across ' + decided + ' graded pick(s):\n\n'
+    ? 'GRADE AUDIT - ' + problems.length + ' contradiction(s) across ' + decided + ' graded pick(s):\n\n'
       + problems.join('\n\n')
       + '\n\nEach of these is two grades that cannot both be right. Check the rows.'
-    : 'GRADE AUDIT — no contradictions found across ' + decided + ' graded pick(s).\n'
+    : 'GRADE AUDIT - no contradictions found across ' + decided + ' graded pick(s).\n'
       + '  Note this can only check games where two picks disagree with each other;\n'
       + '  a game only one person picked has nothing to check it against.';
   Logger.log(msg);
@@ -1975,7 +1975,7 @@ function migrateSheetsToPostgres() {
       + (minted ? ' (' + minted + ' had no id and were given one)' : ''));
     if (res.rejected.length) {
       out.push('');
-      out.push('REJECTED — ' + res.rejected.length + ' pick(s) Postgres would not accept:');
+      out.push('REJECTED - ' + res.rejected.length + ' pick(s) Postgres would not accept:');
       for (const b of res.rejected.slice(0, 10)) out.push('  ' + b.id + ': ' + b.why);
       out.push('');
       out.push('Fix these rows in the Sheet and run the migration again. Everything');
@@ -2098,10 +2098,10 @@ function compareBackends() {
   }
 
   const msg = problems.length
-    ? out.join('\n') + '\n\nNOT READY — ' + problems.length + ' problem(s):\n  '
+    ? out.join('\n') + '\n\nNOT READY - ' + problems.length + ' problem(s):\n  '
       + problems.slice(0, 15).join('\n  ')
       + '\n\nRe-run migrateSheetsToPostgres(), then compare again.'
-    : out.join('\n') + '\n\nIDENTICAL — both backends agree on every pick, result and record.\n'
+    : out.join('\n') + '\n\nIDENTICAL - both backends agree on every pick, result and record.\n'
       + '  Safe to set Script Property STORAGE = postgres.\n'
       + '  Then run runSelfTest() to confirm grading works against it.';
 
@@ -2183,7 +2183,7 @@ function testAutoGradeLive() {
   const found = findFinishedGame_();
   if (!found) {
     const msg = 'No completed game in the feed right now (daysFrom maxes at 3).\n'
-      + '  Out of season this is expected, not a failure. Try again on a game day —\n'
+      + '  Out of season this is expected, not a failure. Try again on a game day -\n'
       + '  checkOddsApi() shows what the feed currently holds.';
     Logger.log(msg);
     return msg;
