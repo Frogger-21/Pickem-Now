@@ -18,6 +18,13 @@ const ok = (c, label, detail) => {
   else { fail++; console.log("  FAIL " + label + (detail !== undefined ? " :: " + detail : "")); }
 };
 const section = (t) => console.log("\n" + t);
+/* The Wednesday of the current week, mirroring the page, so a test can put
+   the picking week back where it started. */
+const startOfWedWeekLocal = () => {
+  const d = new Date(); d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - ((d.getDay() - 3 + 7) % 7));
+  return d;
+};
 
 // ------------------------------------------------------------------ stub DOM
 function makeEl(id) {
@@ -834,6 +841,27 @@ function run4() {
          "with an explanation under the grid", h.get("#weekStatus").textContent);
       ok(/season starts once both leagues are playing/.test(h.get("#weekStatus").textContent),
          "framed as the rule working, not as something broken");
+
+      /* A week still to come is a different sentence. The NFL prices its whole
+         season early and college prices about a week out, so browsing ahead to
+         late October today shows no college games - which is a book being
+         early, not a week that cannot be played. */
+      const soonWed = new Date(Date.now() + 21 * 864e5);
+      soonWed.setHours(0, 0, 0, 0);
+      soonWed.setDate(soonWed.getDate() - ((soonWed.getDay() - 3 + 7) % 7));
+      h.api.state.weekStart = soonWed;
+      h.api.state.games = [a, b]; h.api.state.picks = [];
+      h.api.togglePick(a, "spread", "favorite", "w1 Home", { line: -3 }, -110);
+      h.api.togglePick(b, "total", "over", "Over", { total: 44 }, -110);
+      h.api.validateRules();
+      ok(/No NFL lines yet/.test(h.get("#btnSubmit").textContent),
+         "a future week says the lines are not up", h.get("#btnSubmit").textContent);
+      ok(/about a week out/.test(h.get("#weekStatus").textContent),
+         "and explains when to come back", h.get("#weekStatus").textContent);
+      ok(!/cannot be played|season starts/.test(h.get("#weekStatus").textContent),
+         "without claiming the week is dead");
+
+      h.api.state.weekStart = startOfWedWeekLocal();
 
       /* An empty board is not the same claim - nothing has loaded yet. */
       h.api.state.games=[]; h.api.state.picks=[];

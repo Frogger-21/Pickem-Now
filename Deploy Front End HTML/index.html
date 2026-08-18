@@ -1060,6 +1060,11 @@ function validateRules(){
   const missing = !state.games.length ? null
                 : (nfl < 2 && !avail.NFL) ? 'NFL'
                 : (cfb < 2 && !avail.NCAAF) ? 'college' : null;
+  /* A week still to come with nothing on the board is almost always a book
+     that has not posted lines yet - the NFL prices its whole season early,
+     college prices about a week out. That is a different sentence from a week
+     that genuinely cannot be played. */
+  const ahead = state.weekStart.getTime() > startOfWedWeek(new Date()).getTime();
 
   const tally = el('#leagueTally');
   if (tally){
@@ -1072,7 +1077,8 @@ function validateRules(){
   btn.classList.toggle('ready', rulesOK && hasEmail);
   btn.textContent = rulesOK
     ? (hasEmail ? 'Submit 5 picks' : 'Add your email to submit')
-    : (missing ? 'No ' + missing + ' games this week'
+    : (missing ? (ahead ? 'No ' + missing + ' lines yet'
+                        : 'No ' + missing + ' games this week')
                : 'Pick ' + (5 - state.picks.length) + ' more');
 
   const ws = el('#weekStatus');
@@ -1084,8 +1090,11 @@ function validateRules(){
       + '. Picks are filed by their week, so they would land in '
       + seasonOfDate(state.weekStart) + '.';
   } else if (ws && missing){
-    ws.textContent = 'No ' + missing + ' games this week, and a slip needs two of each. '
-      + 'The season starts once both leagues are playing.';
+    ws.textContent = ahead
+      ? 'No ' + missing + ' lines posted for this week yet. Books put college up about '
+        + 'a week out, so check back nearer the time.'
+      : 'No ' + missing + ' games this week, and a slip needs two of each. '
+        + 'The season starts once both leagues are playing.';
   }
 
   el('#ruleMsg').textContent = rulesOK ? 'Ready to submit.'
