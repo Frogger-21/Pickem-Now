@@ -87,7 +87,7 @@ function harness(apiResponses) {
   const exported = "return { SEASON, apiUrl, loadSeasons, buildQueries, renderQuery,"
     + " drawBars, esc, pctText, recText, unitText, Q, gameStarted, state, renderGames,"
     + " togglePick, renderPicks, validateRules, cellBlocked, shortName, briefMatchup, sayWhy,"
-    + " minPicks, setMinPicks, floorNote, seasonOfDate, alignWeekToSeason,"
+    + " minPicks, setMinPicks, floorNote, seasonOfDate, alignWeekToSeason, fetchOdds,"
     + " boot: document._boot };";
 
   const fn = new Function(
@@ -520,6 +520,31 @@ function run4() {
       ok(/NFL: 0\/2/.test(h.get("#ruleNFL").textContent), "ruleNFL still says what it said");
       ok(/ML: 0\/1 \(odds > -200\)/.test(h.get("#ruleML").textContent), "and ruleML too",
          h.get("#ruleML").textContent);
+    }
+
+    section("a page load does not spend API credits");
+    {
+      /* The odds endpoint bills markets x regions: spreads, totals and h2h
+         across us is 3 credits, so a page load is 6 across two leagues. With
+         nocache on every load, eight people checking a few times a week spends
+         the whole 500-credit month on browsing. */
+      const odds = { ok: true, games: [] };
+      const hh = harness({ seasons: SEASONS, odds: odds });
+      await hh.api.loadSeasons();
+      hh.fetched.length = 0;
+
+      await hh.api.fetchOdds();
+      const auto = hh.fetched.filter((u) => /fn=odds/.test(u));
+      ok(auto.length === 2, "one call per league", auto.length);
+      ok(auto.every((u) => !/nocache/.test(u)),
+         "and neither bypasses the cache", auto.join(" | "));
+
+      hh.fetched.length = 0;
+      await hh.api.fetchOdds(true);
+      const forced = hh.fetched.filter((u) => /fn=odds/.test(u));
+      ok(forced.every((u) => /nocache=1/.test(u)),
+         "an explicit refresh does bypass it, which is the point of the button",
+         forced.join(" | "));
     }
 
     section("no single-class rule positions absolutely");

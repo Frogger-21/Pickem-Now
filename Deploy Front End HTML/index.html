@@ -99,8 +99,9 @@
                       color:var(--dim);cursor:pointer}
     #sportFilter .seg.on{background:var(--surface-2);color:var(--accent);
                          box-shadow:inset 0 0 0 1px var(--line)}
-    #btnSort{background:var(--surface);border:1px solid var(--line);border-radius:10px;
+    #btnSort,#btnRefresh{background:var(--surface);border:1px solid var(--line);border-radius:10px;
              padding:9px 11px;font-size:12px;color:var(--dim);white-space:nowrap;flex:none}
+    #btnRefresh{margin-top:10px}
 
     /* ---------------------------------------------------------- odds grid */
     .gridHead{display:grid;grid-template-columns:1fr 74px 74px 62px;gap:1px;
@@ -373,7 +374,7 @@
       <div class="gridHead"><span>Team</span><span>Spread</span><span>Total</span><span>ML</span></div>
       <div id="games" aria-live="polite"></div>
       <div id="weekStatus" class="hint" style="margin-top:10px"></div>
-      <button id="btnRefresh" class="hidden">Refresh</button>
+      <button id="btnRefresh">Refresh odds</button>
 
       <!-- The rule counters still exist. They are rendered as slots and a
            tally rather than a row of tags, but the elements and their text are
@@ -694,7 +695,12 @@ const state = {
 const SORTS = ['Kickoff', 'Biggest spread', 'Closest line'];
 
 /* =================== ODDS =================== */
-async function fetchOdds(){
+/* The odds endpoint bills markets x regions - spreads, totals and h2h across
+   us is 3 credits a call, so a page load costs 6 across the two leagues. With
+   nocache on every load, eight people checking the site a few times a week
+   spends the entire 500-credit monthly allowance on browsing. The cache is two
+   hours; only an explicit Refresh should skip it. */
+async function fetchOdds(force){
   const root = el('#games');
   root.innerHTML = '<div class="empty">Loading games…</div>';
   try{
@@ -705,8 +711,9 @@ async function fetchOdds(){
       try { return JSON.parse(text); }
       catch(e){ throw new Error('Non-JSON response: ' + text.slice(0,140)); }
     };
-    const nfl   = await getJSON(CONFIG.API+'?fn=odds&league=nfl&weekStart='+startISO+'&nocache=1');
-    const ncaaf = await getJSON(CONFIG.API+'?fn=odds&league=ncaaf&weekStart='+startISO+'&nocache=1');
+    const fresh = force ? '&nocache=1' : '';
+    const nfl   = await getJSON(CONFIG.API+'?fn=odds&league=nfl&weekStart='+startISO+fresh);
+    const ncaaf = await getJSON(CONFIG.API+'?fn=odds&league=ncaaf&weekStart='+startISO+fresh);
     if (nfl && nfl.ok === false)     throw new Error('NFL odds: '   + (nfl.error||'unknown'));
     if (ncaaf && ncaaf.ok === false) throw new Error('NCAAF odds: ' + (ncaaf.error||'unknown'));
 
@@ -1606,6 +1613,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
   el('#gameSearch').addEventListener('input',e=>{ state.query=e.target.value; renderGames(); });
   el('#btnSort').addEventListener('click',()=>{
     state.sort=(state.sort+1)%SORTS.length; renderGames(); });
+  el('#btnRefresh').addEventListener('click',()=>fetchOdds(true));
   els('#sportFilter .seg').forEach(seg=>seg.addEventListener('click',()=>{
     state.sport=seg.dataset.value;
     els('#sportFilter .seg').forEach(s=>s.classList.toggle('on',s===seg));
