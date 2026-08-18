@@ -958,6 +958,40 @@ function run4() {
          (text.match(/.*Dolphins.*/) || [])[0]);
     }
 
+    section("a shared slip always reads fav, dog, over, under, ML");
+    {
+      /* fn=mine returns newest-first, which is whatever order the picks were
+         tapped in. A slip that arrives in a different order every week is
+         harder to read at a glance in a chat thread. */
+      const jumbled = [
+        { week:"2025-12-03", market:"moneyline", kind:"ml", selection:"Miami Dolphins",
+          matchup:"Miami Dolphins @ New York Jets", line:"", odds:-154, status:"win" },
+        { week:"2025-12-03", market:"total", kind:"under", selection:"Under",
+          matchup:"Duke Blue Devils @ Virginia Cavaliers", line:52.5, odds:-110, status:"loss" },
+        { week:"2025-12-03", market:"spread", kind:"underdog", selection:"Buffalo Bills",
+          matchup:"Buffalo Bills @ Kansas City Chiefs", line:5.5, odds:-110, status:"win" },
+        { week:"2025-12-03", market:"total", kind:"over", selection:"Over",
+          matchup:"Chicago Bears @ Green Bay Packers", line:44.5, odds:-110, status:"win" },
+        { week:"2025-12-03", market:"spread", kind:"favorite", selection:"Kansas City Chiefs",
+          matchup:"Buffalo Bills @ Kansas City Chiefs", line:-3, odds:-110, status:"loss" }
+      ];
+      const text = hhShare.api.shareSlipText("2025-12-03", jumbled);
+      const picks = text.split(String.fromCharCode(10))
+        .filter((l) => /^[✅❌➖⏳]/.test(l));
+
+      ok(picks.length === 5, "five lines", picks.length);
+      ok(/Chiefs -3/.test(picks[0]),        "favourite first",  picks[0]);
+      ok(/Bills \+5\.5/.test(picks[1]),     "then the dog",     picks[1]);
+      ok(/o44\.5/.test(picks[2]),           "then the over",    picks[2]);
+      ok(/u52\.5/.test(picks[3]),           "then the under",   picks[3]);
+      ok(/ML/.test(picks[4]),               "moneyline last",   picks[4]);
+
+      /* Reversing the input must not change the output - the order is the
+         slip's, not the order they happened to be tapped in. */
+      const again = hhShare.api.shareSlipText("2025-12-03", jumbled.slice().reverse());
+      ok(again === text, "and the same slip always reads the same way");
+    }
+
     section("a team name is trimmed at a word, never mid-word");
     {
       const t = hhShare.api.tinyTeam;

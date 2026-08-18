@@ -1170,6 +1170,14 @@ function shareLine(p){
   return mark + ' ' + what.trim();
 }
 
+/* Favourite, underdog, over, under, moneyline - the order the slot bar uses.
+   Reusing SLOTS rather than restating it means the shared slip and the slip
+   on screen cannot drift into disagreeing about what order a slip goes in. */
+function shareOrder(p){
+  for (let i = 0; i < SLOTS.length; i++) if (SLOTS[i].test(p)) return i;
+  return SLOTS.length;                       // anything unrecognised sinks
+}
+
 function shareSlipText(week, rows){
   const name = (el('#nameInput').value || '').trim()
             || (el('#emailInput').value || '').trim() || 'Picks';
@@ -1180,7 +1188,9 @@ function shareSlipText(week, rows){
   const head = 'Picks Game · ' + fmtWeek(week).replace(/^Week of /, '');
   const rec = name + ' ' + w + '-' + l + (pend ? ' · ' + pend + ' pending' : '');
 
-  return [head, rec, ''].concat(rows.map(shareLine))
+  const ordered = rows.slice().sort((a, b) => shareOrder(a) - shareOrder(b));
+
+  return [head, rec, ''].concat(ordered.map(shareLine))
     .concat(['', 'quinton4mvp.com']).join('\n');
 }
 
