@@ -236,6 +236,27 @@
     .owe{display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;
          color:var(--accent);text-transform:uppercase;margin-top:3px}
 
+    /* --------------------------------------------------- everyone's picks */
+    .slipCard{background:var(--surface);border:1px solid var(--line-soft);
+              border-radius:12px;margin-bottom:8px;overflow:hidden}
+    .slipCard .who{display:flex;align-items:center;gap:8px;padding:9px 12px;
+                   border-bottom:1px solid var(--line-soft)}
+    .slipCard .who b{font-size:14.5px}
+    .slipCard .who .rec{margin-left:auto;font-family:var(--mono);font-size:13px}
+    .slipCard.me{border-color:var(--accent-dim)}
+    .slipCard .who .tag{font-family:var(--mono);font-size:8.5px;letter-spacing:.1em;
+                        color:var(--accent);text-transform:uppercase}
+    .pk{display:flex;align-items:center;gap:9px;padding:7px 12px;font-size:13px;
+        border-top:1px solid oklch(0.22 0.008 60)}
+    .pk:first-of-type{border-top:none}
+    .pk .role{font-family:var(--mono);font-size:8px;letter-spacing:.1em;color:var(--faint);
+              width:52px;flex:none;text-transform:uppercase}
+    .pk .sel{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .pk .res{font-family:var(--mono);font-size:9px;letter-spacing:.08em;flex:none}
+    .pk.win .res{color:var(--win)} .pk.loss .res{color:var(--loss)}
+    .pk.hidden-pick .sel{color:var(--faint);font-style:italic}
+    .slipEmpty{padding:11px 12px;color:var(--faint);font-size:12.5px}
+
     /* ------------------------------------------------------------- queries */
     .qControls{display:grid;grid-template-columns:1fr;gap:8px;margin-bottom:12px}
     .qField{display:flex;flex-direction:column;gap:4px}
@@ -413,6 +434,7 @@
       <tbody></tbody>
     </table>
     <div id="boardFoot" class="hint" style="margin-top:12px"></div>
+    <div id="weekSlips"></div>
     <select id="weekPicker" class="hidden"></select>
     <div id="weekTable" class="hidden"></div>
     <button id="btnRefreshBoard" class="hidden">Refresh</button>
@@ -1200,6 +1222,7 @@ async function buildBoard(){
         + '<td class="bpct">'+pct+'</td></tr>';
     }).join('');
     foot.textContent='Sorted by total wins, then win percentage. 🏆 marks most weeks won.';
+    const slips=el('#weekSlips'); if(slips) slips.innerHTML='';   // season view, not a week
   }catch(e){
     tbody.innerHTML='<tr><td colspan="5" class="hint">Could not load: '+esc(e.message||e)+'</td></tr>';
   }
@@ -1242,6 +1265,88 @@ async function buildBoardWeek(){
         ? missing.length + ' still to pick: ' + missing.join(', ')
         : 'everybody is in')
     + (j.decided ? ' · won by ' + ((j.winners||[]).join(', ')||'nobody') : '');
+
+  buildWeekSlips(wk);
+}
+
+/* Everyone's slips for a week. A pick appears once its own game has started -
+   the same moment it stops being changeable - so nobody can read the room
+   before picking. Until then the slot still shows, because knowing somebody is
+   in is not the same as knowing what they are on. */
+async function buildWeekSlips(week){
+  const host = el('#weekSlips');
+  if (!host) return;
+  const email = (el('#emailInput').value || '').trim();
+  host.innerHTML = '<div class="hint" style="margin-top:14px">Loading picks…</div>';
+
+  let j;
+  try{
+    const r = await fetch(apiUrl('weekpicks', { week: week, email: email }));
+    j = await r.json();
+    if (!j || j.ok === false) throw new Error((j && j.error) || 'unavailable');
+  }catch(e){
+    host.innerHTML = '<div class="hint" style="margin-top:14px">Could not load picks: '
+      + esc(e.message || e) + '</div>';
+    return;
+  }
+
+  const players = j.players || [];
+  if (!players.length){ host.innerHTML = ''; return; }
+
+  const anyHidden = players.some(p => p.hidden > 0);
+  host.innerHTML =
+      '<div class="eyebrow" style="margin:18px 0 8px">Everyone’s picks</div>'
+    + (anyHidden
+        ? '<div class="hint" style="margin-bottom:10px">Picks appear when their game '
+          + 'kicks off. Your own are always visible.</div>'
+        : '')
+    + players.map(p => slipCardHtml(p, j.expected || 5)).join('');
+}
+
+function slipCardHtml(p, expected){
+  const mine = p.rows.some(r => r.own);
+  const rec = p.picks
+    ? p.wins + '-' + p.losses + (p.pushes ? '-' + p.pushes : '')
+    : '';
+  const note = !p.picks ? 'no picks yet'
+             : p.picks < expected ? p.picks + ' of ' + expected
+             : '';
+
+  const body = p.rows.length
+    ? p.rows.map(pickLineHtml).join('')
+    : '<div class="slipEmpty">Nothing in for this week.</div>';
+
+  return '<div class="slipCard' + (mine ? ' me' : '') + '">'
+    + '<div class="who"><b>' + esc(p.user) + '</b>'
+    + (mine ? '<span class="tag">you</span>' : '')
+    + (note ? '<span class="tag">' + esc(note) + '</span>' : '')
+    + (rec ? '<span class="rec">' + esc(rec) + '</span>' : '')
+    + '</div>' + body + '</div>';
+}
+
+function pickLineHtml(r){
+  if (r.hidden){
+    return '<div class="pk hidden-pick"><span class="role">—</span>'
+      + '<span class="sel">Hidden until kickoff</span>'
+      + '<span class="res"></span></div>';
+  }
+  const role = r.market === 'moneyline' ? 'ML' : String(r.kind || '').toUpperCase();
+  const line = (r.line === '' || r.line === null || r.line === undefined)
+    ? '' : ' ' + signed(Number(r.line));
+  /* A total's selection is the word Over or Under, which names no game - the
+     matchup is the only thing that identifies it. */
+  const sides = String(r.matchup || '').split(' @ ');
+  const brief = sides.length === 2
+    ? shortName(sides[0]) + ' @ ' + shortName(sides[1]) : String(r.matchup || '');
+  const what = r.market === 'total'
+    ? esc(brief) + ' ' + esc(String(r.kind || '').toUpperCase()) + esc(line)
+    : esc(shortName(r.selection)) + esc(line);
+  const st = String(r.status || 'pending').toLowerCase();
+  const cls = (st === 'win' || st === 'loss') ? st : '';
+
+  return '<div class="pk ' + cls + '"><span class="role">' + esc(role) + '</span>'
+    + '<span class="sel" title="' + esc(r.matchup || '') + '">' + what + '</span>'
+    + '<span class="res">' + (st === 'pending' ? '' : esc(st.toUpperCase())) + '</span></div>';
 }
 
 /* =================== QUERIES =================== */

@@ -88,6 +88,7 @@ function harness(apiResponses) {
     + " drawBars, esc, pctText, recText, unitText, Q, gameStarted, state, renderGames,"
     + " togglePick, renderPicks, validateRules, cellBlocked, shortName, briefMatchup, sayWhy,"
     + " minPicks, setMinPicks, floorNote, seasonOfDate, alignWeekToSeason, fetchOdds,"
+    + " buildWeekSlips, slipCardHtml, pickLineHtml,"
     + " boot: document._boot };";
 
   const fn = new Function(
@@ -834,6 +835,73 @@ function run4() {
       ok(!/No NFL games/.test(h.get("#btnSubmit").textContent),
          "an unloaded board makes no claim about any league",
          h.get("#btnSubmit").textContent);
+    }
+
+
+    section("everyone's slips render, hidden picks included");
+    {
+      const WEEKPICKS = { ok: true, week: "2026-09-09", expected: 5, decided: false, winners: [],
+        players: [
+          { user: "Ann", picks: 5, wins: 2, losses: 1, pushes: 0, pending: 2, hidden: 1, rows: [
+            { hidden:false, league:"NFL", market:"spread", kind:"favorite",
+              selection:"Kansas City Chiefs", matchup:"Buffalo Bills @ Kansas City Chiefs",
+              line:-3, odds:-110, status:"win", own:true },
+            { hidden:false, league:"NCAAF", market:"total", kind:"under",
+              selection:"Under", matchup:"Duke Blue Devils @ Virginia Cavaliers",
+              line:52.5, odds:-110, status:"loss", own:true },
+            { hidden:true } ] },
+          { user: "Bob", picks: 2, wins: 0, losses: 0, pushes: 0, pending: 2, hidden: 2, rows: [
+            { hidden:true }, { hidden:true } ] },
+          { user: "Cid", picks: 0, wins: 0, losses: 0, pushes: 0, pending: 0, hidden: 0, rows: [] }
+        ] };
+
+      const hh = harness({ seasons: SEASONS, weekpicks: WEEKPICKS });
+      await hh.api.loadSeasons();
+      await hh.api.buildWeekSlips("2026-09-09");
+      const html = hh.get("#weekSlips").innerHTML;
+
+      ok(/Ann/.test(html) && /Bob/.test(html) && /Cid/.test(html), "all three players appear");
+      ok(/Kansas City Chiefs/.test(html) || /Chiefs/.test(html), "a revealed pick shows its team");
+      ok(/Hidden until kickoff/.test(html), "an unstarted one does not");
+      ok((html.match(/Hidden until kickoff/g) || []).length === 3,
+         "three hidden across the two players", (html.match(/Hidden until kickoff/g)||[]).length);
+      ok(/Nothing in for this week/.test(html), "and an empty slip says so");
+
+      /* A total's selection is the word Under, so the matchup is the only
+         thing that identifies which game it was. */
+      ok(/Duke/.test(html), "a total names its game", (html.match(/Duke[^<]*/)||[])[0]);
+      ok(/class="tag">you</.test(html), "your own card is marked");
+      ok(/slipCard me/.test(html), "and highlighted");
+      ok(/no picks yet/.test(html), "somebody with nothing is called out");
+      ok(/2 of 5/.test(html), "and a half-finished slip shows the count");
+      ok(/Picks appear when their game kicks off/.test(html),
+         "with one line explaining why anything is hidden");
+    }
+
+    section("nothing is hidden once every game has started");
+    {
+      const OPEN = { ok: true, week: "2025-12-03", expected: 5, decided: true, winners: ["Ann"],
+        players: [ { user: "Ann", picks: 1, wins: 1, losses: 0, pushes: 0, pending: 0, hidden: 0,
+          rows: [ { hidden:false, league:"NFL", market:"moneyline", kind:"ml",
+                    selection:"Buffalo Bills", matchup:"Buffalo Bills @ Kansas City Chiefs",
+                    line:"", odds:150, status:"win", own:false } ] } ] };
+      const hh = harness({ seasons: SEASONS, weekpicks: OPEN });
+      await hh.api.loadSeasons();
+      await hh.api.buildWeekSlips("2025-12-03");
+      const html = hh.get("#weekSlips").innerHTML;
+      ok(!/Hidden until kickoff/.test(html), "no masked rows");
+      ok(!/Picks appear when their game/.test(html),
+         "and no explanation of masking, since none happened");
+      ok(/WIN/.test(html), "results show through", (html.match(/class="res">[^<]*/)||[])[0]);
+    }
+
+    section("a failing weekpicks call does not blank the board");
+    {
+      const hh = harness({ seasons: SEASONS });      // no weekpicks endpoint
+      await hh.api.loadSeasons();
+      await hh.api.buildWeekSlips("2026-09-09");
+      ok(/Could not load picks/.test(hh.get("#weekSlips").innerHTML),
+         "it says so instead of going silent", hh.get("#weekSlips").innerHTML.slice(0, 80));
     }
 
     section("a stats failure is reported, not silent");

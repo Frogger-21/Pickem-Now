@@ -127,7 +127,7 @@ function oddsHarness(pickRows, oddsFeed) {
   };
   const names = Object.keys(env);
   const api = new Function(...names,
-    SRC + "return { checkKickoffLock_, pickSignature_, kickoffMap_ };")(...names.map((n) => env[n]));
+    SRC + "return { checkKickoffLock_, pickSignature_, kickoffMap_, getWeekPicks_, pickIsPublic_ };")(...names.map((n) => env[n]));
   return { api, store };
 }
 
@@ -937,6 +937,100 @@ section("grading that fails tells somebody");
   const out2 = quiet.api.autoGrade();
   ok((out2.errors || []).length > 0, "the failure is still recorded");
   ok(quiet.sent.length === 0, "just not sent anywhere", quiet.sent.length);
+}
+
+
+section("everyone's picks are revealed at kickoff, not before");
+{
+  const soon = new Date(Date.now() + 864e5).toISOString();   // tomorrow
+  const past = new Date(Date.now() - 864e5).toISOString();   // yesterday
+  const WK = "2099-01-07";   // far future, so the week-has-passed fallback stays out of it
+
+  const p = (id, user, gameId, status, kickoff) =>
+    [id, WK, user.toLowerCase() + "@x.com", user, "NFL", gameId, "Bills @ Chiefs",
+     "spread", "favorite", "Kansas City Chiefs", -110,
+     JSON.stringify({ line: -3, kickoff: kickoff }), status, ""];
+
+  const odds = { NFL: [
+    { id: "started", commence_time: past, home_team: "Kansas City Chiefs", away_team: "Buffalo Bills" },
+    { id: "later",   commence_time: soon, home_team: "Kansas City Chiefs", away_team: "Buffalo Bills" }
+  ], NCAAF: [] };
+
+  const rows = [PICK_HEADERS,
+    p("a1", "Ann", "started", "pending"),   // game under way -> public
+    p("a2", "Ann", "later",   "pending"),   // not started    -> hidden
+    p("b1", "Bob", "later",   "pending"),   // not started    -> hidden
+    p("b2", "Bob", "started", "win")        // graded         -> public
+  ];
+
+  const h = oddsHarness(rows, odds);
+  const out = h.api.getWeekPicks_(WK, "");
+  const by = {};
+  for (const pl of out.players) by[pl.user] = pl;
+
+  ok(by.Ann.picks === 2, "the count is visible even when the picks are not", by.Ann.picks);
+  ok(by.Ann.hidden === 1, "one of Ann's is still hidden", by.Ann.hidden);
+  const shown = by.Ann.rows.filter((r) => !r.hidden);
+  ok(shown.length === 1, "and one is shown");
+  ok(shown[0].selection === "Kansas City Chiefs", "with the actual pick", shown[0].selection);
+  ok(shown[0].line === -3, "and the line it was taken at", shown[0].line);
+  ok(by.Ann.rows.filter((r) => r.hidden)[0].selection === undefined,
+     "a hidden row carries no selection at all - not even to be un-hidden client side");
+
+  ok(by.Bob.hidden === 1, "a graded pick is public whatever the feed says", by.Bob.hidden);
+}
+
+section("you can always see your own picks");
+{
+  const soon = new Date(Date.now() + 864e5).toISOString();
+  const WK = "2099-01-07";
+  const p = (id, user, gameId) =>
+    [id, WK, user.toLowerCase() + "@x.com", user, "NFL", gameId, "Bills @ Chiefs",
+     "spread", "favorite", "Kansas City Chiefs", -110, JSON.stringify({ line: -3 }), "pending", ""];
+  const odds = { NFL: [{ id: "later", commence_time: soon,
+                         home_team: "Kansas City Chiefs", away_team: "Buffalo Bills" }], NCAAF: [] };
+
+  const h = oddsHarness([PICK_HEADERS, p("a1", "Ann", "later"), p("b1", "Bob", "later")], odds);
+  const out = h.api.getWeekPicks_(WK, "ann@x.com");
+  const by = {}; for (const pl of out.players) by[pl.user] = pl;
+
+  ok(by.Ann.hidden === 0, "your own are visible - you made them", by.Ann.hidden);
+  ok(by.Ann.rows[0].own === true, "and flagged as yours");
+  ok(by.Bob.hidden === 1, "somebody else's are not", by.Bob.hidden);
+}
+
+section("old picks do not stay hidden forever");
+{
+  /* The odds feed only carries upcoming games, so a pick from last month has
+     no kickoff to check. Without a fallback it would be masked permanently. */
+  const p = (id, user) =>
+    [id, "2025-09-03", user.toLowerCase() + "@x.com", user, "NFL", "gone", "Bills @ Chiefs",
+     "spread", "favorite", "Kansas City Chiefs", -110, JSON.stringify({ line: -3 }), "pending", ""];
+  const h = oddsHarness([PICK_HEADERS, p("a1", "Ann")], { NFL: [], NCAAF: [] });
+  const out = h.api.getWeekPicks_("2025-09-03", "");
+  ok(out.players[0].hidden === 0, "a week that has been and gone is public",
+     out.players[0].hidden);
+  ok(out.players[0].rows[0].selection === "Kansas City Chiefs", "with the pick readable");
+}
+
+section("a player who has not picked is a visible blank");
+{
+  /* Both weeks in one season: the expected roster is per-season by design, so
+     somebody who only played a different year is genuinely not owed here. */
+  const WK = "2025-09-10";
+  const p = (id, user, week) =>
+    [id, week, user.toLowerCase() + "@x.com", user, "NFL", "g1", "Bills @ Chiefs",
+     "spread", "favorite", "Kansas City Chiefs", -110, JSON.stringify({ line: -3 }), "win", ""];
+  // Ann and Bob both played an earlier week; only Ann played this one.
+  const rows = [PICK_HEADERS, p("o1", "Ann", "2025-09-03"), p("o2", "Bob", "2025-09-03"),
+                              p("n1", "Ann", WK)];
+  const h = oddsHarness(rows, { NFL: [], NCAAF: [] });
+  const out = h.api.getWeekPicks_(WK, "");
+  const names = out.players.map((x) => x.user);
+  ok(names.indexOf("Bob") >= 0, "Bob is listed even with nothing in", names.join());
+  const bob = out.players.filter((x) => x.user === "Bob")[0];
+  ok(bob.picks === 0 && bob.rows.length === 0, "as an empty slip, not a missing row");
+  ok(out.players[out.players.length - 1].user === "Bob", "and sorts last", names.join());
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

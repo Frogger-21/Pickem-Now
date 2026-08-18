@@ -657,7 +657,7 @@ function pgReadUsers_() {
 
 // ===== HTTP HANDLERS =========================================================
 // GET: odds (league=nfl|ncaaf[,nocache=1]), mine (email), board, isAdmin (email)
-const GET_FNS = ['odds', 'mine', 'board', 'weeks', 'week', 'seasons', 'stats', 'isAdmin'];
+const GET_FNS = ['odds', 'mine', 'board', 'weeks', 'week', 'weekpicks', 'seasons', 'stats', 'isAdmin'];
 
 // Bump when pasting a new copy into the editor. Only a human can keep this
 // honest, which is why it is not the thing to trust - see capabilities_().
@@ -686,7 +686,8 @@ function capabilities_() {
     seasons:   typeof getSeasons_       === 'function',
     stats:     typeof getStats_         === 'function',
     kickofflock: typeof checkKickoffLock_ === 'function',
-    notify:      typeof notifyWeekOpen     === 'function'
+    notify:      typeof notifyWeekOpen     === 'function',
+    weekpicks:   typeof getWeekPicks_      === 'function'
   };
   return Object.keys(has).filter(function (k) { return has[k]; });
 }
@@ -714,6 +715,7 @@ function doGet(e) {
     if (p.fn === 'board')   return asJson(ok({ rows: getBoard_(p.season) }));
     if (p.fn === 'weeks')   return asJson(ok({ weeks: getWeeks_(p.season) }));
     if (p.fn === 'week')    return asJson(ok(getWeek_(String(p.week || ''))));
+    if (p.fn === 'weekpicks') return asJson(ok(getWeekPicks_(String(p.week || ''), p.email)));
     if (p.fn === 'seasons') return asJson(ok({ seasons: getSeasons_() }));
     if (p.fn === 'stats')   return asJson(ok(getStats_(p.season)));
     if (p.fn === 'isAdmin') return asJson(ok({ admin: isAdminEmail_(String(p.email || '')) }));
@@ -3240,4 +3242,123 @@ function removeNotifyTriggers() {
     if (mine[t.getHandlerFunction()]) { ScriptApp.deleteTrigger(t); n++; }
   }
   return 'removed ' + n + ' notification trigger(s)';
+}
+
+// ===== EVERYONE'S PICKS ======================================================
+// Half the point of a pool is seeing what everybody took. This reveals a pick
+// on exactly the same condition that locks it: its own game has started.
+// Before that it stays hidden, or the last person to pick could simply copy the
+// first - and the slot count is still shown, so you can see somebody is in
+// without seeing what they are in on.
+
+/**
+ * A pick is public once it can no longer be changed.
+ *
+ * Kickoff is the rule, but the odds feed only carries upcoming games, so a
+ * pick from three weeks ago has no kickoff to check. Two fallbacks cover that:
+ * anything already graded is plainly over, and so is any week that has been
+ * and gone. Without them, last month's picks would stay hidden forever.
+ */
+function pickIsPublic_(p, kickoffs, now) {
+  if (p.status && p.status !== 'pending') return true;
+
+  const iso = kickoffs[String(p.gameId || '')] || p.kickoff;
+  if (iso) {
+    const t = new Date(iso).getTime();
+    if (isFinite(t) && t <= now) return true;
+  }
+
+  const ymd = weekKey_(p.week);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+    const parts = ymd.split('-').map(Number);
+    const weekEnd = Date.UTC(parts[0], parts[1] - 1, parts[2]) + 8 * 86400000;
+    if (weekEnd <= now) return true;
+  }
+  return false;
+}
+
+/**
+ * Every player's slip for one week, masked where a game has not started.
+ *
+ * `email` is whoever is asking: your own picks are always visible to you,
+ * since you made them.
+ */
+function getWeekPicks_(week, email) {
+  const wk = String(week);
+  const now = Date.now();
+  const mine = String(email || '').trim().toLowerCase();
+
+  const picks = readPicks_().filter(function (p) {
+    return p.week === wk && p.week !== SELFTEST_WEEK;
+  });
+
+  // One odds lookup for the whole week, and only if something is still open.
+  const leagues = {};
+  for (const p of picks) {
+    const lg = String(p.league || '').toUpperCase();
+    if (lg && (!p.status || p.status === 'pending')) leagues[lg] = true;
+  }
+  const kickoffs = Object.keys(leagues).length ? kickoffMap_(Object.keys(leagues)) : {};
+
+  const byUser = {};
+  for (const p of picks) {
+    const u = String(p.user || '').trim();
+    if (!u) continue;
+    if (!byUser[u]) byUser[u] = { user: u, picks: 0, wins: 0, losses: 0, pushes: 0,
+                                  pending: 0, hidden: 0, rows: [] };
+    const node = byUser[u];
+    node.picks++;
+    if (p.status === 'win') node.wins++;
+    else if (p.status === 'loss') node.losses++;
+    else if (p.status === 'push') node.pushes++;
+    else node.pending++;
+
+    const own = mine && p.email.trim().toLowerCase() === mine;
+    if (!own && !pickIsPublic_(p, kickoffs, now)) {
+      node.hidden++;
+      node.rows.push({ hidden: true });
+      continue;
+    }
+
+    const meta = parseMeta_(p.meta) || {};
+    const line = p.market === 'spread' ? meta.line
+               : p.market === 'total'  ? meta.total : '';
+    node.rows.push({
+      hidden: false,
+      league: p.league,
+      market: p.market,
+      kind: p.kind,
+      selection: p.selection,
+      matchup: p.matchup,
+      line: (line === undefined || line === null) ? '' : line,
+      odds: p.odds,
+      status: p.status || 'pending',
+      own: !!own
+    });
+  }
+
+  // Everyone expected, so a player who has not picked is a visible blank
+  // rather than an absence.
+  const detail = getWeek_(wk);
+  for (const r of detail.rows) {
+    if (!byUser[r.user]) {
+      byUser[r.user] = { user: r.user, picks: 0, wins: 0, losses: 0, pushes: 0,
+                         pending: 0, hidden: 0, rows: [] };
+    }
+  }
+
+  const players = Object.keys(byUser).map(function (u) { return byUser[u]; })
+    .sort(function (a, b) {
+      return ((b.picks > 0) - (a.picks > 0))
+          || (b.wins - a.wins) || (a.losses - b.losses)
+          || a.user.localeCompare(b.user);
+    });
+
+  return {
+    week: wk,
+    expected: PICKS_PER_WEEK,
+    decided: detail.decided,
+    winners: detail.winners,
+    players: players
+  };
 }

@@ -168,6 +168,17 @@ Newest first. `decided` is false while any pick in that week is pending, and
 
 Pass the `week` value exactly as `fn=weeks` returned it.
 
+### `fn=weekpicks&week=<label>[&email=<yours>]`
+
+Everyone's slips for one week. A pick is revealed only once its own game has
+started - the same moment it stops being changeable - so nobody can read the
+room before picking. Until then the row is `{"hidden":true}` and carries no
+selection at all, not even to be un-hidden in the browser. Your own picks are
+always visible, so pass your email.
+
+Players with nothing in are listed with an empty `rows`, so a no-show is a
+visible blank rather than an absence.
+
 ### `fn=mine&email=<email>[&season=]`
 
 ```json
