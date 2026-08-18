@@ -88,6 +88,36 @@ function harness(sheets, scoresByLeague) {
   return { api, store, calls };
 }
 
+
+/* The existing harness answers the scores endpoint; the kickoff lock reads the
+   odds endpoint instead. `oddsFeed = null` simulates the feed being down. */
+function oddsHarness(pickRows, oddsFeed) {
+  const store = { Picks: new FakeSheet("Picks", pickRows), Results: new FakeSheet("Results", []) };
+  const env = {
+    PropertiesService: { getScriptProperties: () => ({
+      getProperty: (k) => ({ ODDS_API_KEY: "k", SHEET_ID: "s" }[k] || null) }) },
+    SpreadsheetApp: { openById: () => ({
+      getName: () => "test",
+      getSheetByName: (n) => store[n] || null,
+      insertSheet: (n) => (store[n] = new FakeSheet(n, [])) }) },
+    UrlFetchApp: { fetch: (url) => {
+      if (oddsFeed === null) throw new Error("odds feed unavailable");
+      const lg = url.indexOf("americanfootball_nfl") >= 0 ? "NFL" : "NCAAF";
+      const games = (oddsFeed[lg] || []).map((g) => Object.assign({
+        bookmakers: [] }, g));
+      return { getResponseCode: () => 200, getContentText: () => JSON.stringify(games) };
+    } },
+    LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock() {} }) },
+    Logger: { log() {} },
+    CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) },
+    ScriptApp: {}, Utilities: { getUuid: () => "uuid" }, ContentService: {}
+  };
+  const names = Object.keys(env);
+  const api = new Function(...names,
+    SRC + "return { checkKickoffLock_, pickSignature_, kickoffMap_ };")(...names.map((n) => env[n]));
+  return { api, store };
+}
+
 let pass = 0, fail = 0;
 const ok = (c, label, detail) => {
   if (c) pass++;
@@ -530,6 +560,141 @@ section("stats split NFL from college");
      Object.keys(lg).join());
   ok(lg.NFL.pct > lg.NCAAF.pct, "percentages differ as they should",
      lg.NFL.pct + " vs " + lg.NCAAF.pct);
+}
+
+
+// ------------------------------------------------------------- kickoff lock
+// The rule: a pick is legal until its own game starts. Because a submission
+// replaces the whole week, the check is not "no picks on started games" but
+// "the picks on started games are exactly what they already were". Both
+// failure directions matter - blocking a legitimate Sunday edit is as wrong as
+// letting a Thursday pick be changed at half time.
+section("kickoff lock: legitimate edits still go through");
+{
+  const T0 = Date.parse("2025-09-04T18:00:00Z");   // Thursday evening
+  const EARLY = "2025-09-04T23:00:00Z";            // Thursday night game
+  const LATE  = "2025-09-07T17:00:00Z";            // Sunday game
+
+  const odds = {
+    NFL: [{ id: "thu", commence_time: EARLY, home_team: "Kansas City Chiefs", away_team: "Buffalo Bills" },
+          { id: "sun", commence_time: LATE,  home_team: "Dallas Cowboys",     away_team: "Philadelphia Eagles" }],
+    NCAAF: []
+  };
+
+  const mk = (gameId, market, kind, sel, meta) => ({
+    week: "2025-09-03", league: "NFL", gameId, matchup: gameId + " game",
+    market, kind, selection: sel, odds: -110, meta
+  });
+
+  // Before anything starts, anything goes.
+  const h = oddsHarness([], odds);
+  ok(h.api.checkKickoffLock_("a@x.com", [mk("thu", "spread", "favorite", "Kansas City Chiefs", { line: -3 })],
+     Date.parse("2025-09-04T12:00:00Z")) === null,
+     "a pick before kickoff is fine");
+
+  // Thursday has kicked off; a fresh pick on it is refused.
+  const late = h.api.checkKickoffLock_("a@x.com",
+    [mk("thu", "spread", "favorite", "Kansas City Chiefs", { line: -3 })],
+    Date.parse("2025-09-05T02:00:00Z"));
+  ok(/Too late/.test(late || ""), "a pick after kickoff is refused", late);
+  ok(/thu game/.test(late || ""), "and names the game", late);
+
+  // A Sunday pick is still fine even though Thursday is over.
+  ok(h.api.checkKickoffLock_("a@x.com",
+      [mk("sun", "spread", "favorite", "Dallas Cowboys", { line: -3 })],
+      Date.parse("2025-09-05T02:00:00Z")) === null,
+     "a later game is unaffected by an earlier one having started");
+}
+
+section("kickoff lock: an unchanged pick survives a resubmission");
+{
+  const EARLY = "2025-09-04T23:00:00Z", LATE = "2025-09-07T17:00:00Z";
+  const odds = { NFL: [
+    { id: "thu", commence_time: EARLY, home_team: "KC", away_team: "BUF" },
+    { id: "sun", commence_time: LATE,  home_team: "DAL", away_team: "PHI" }], NCAAF: [] };
+
+  const row = (id, gameId, market, kind, sel, meta) =>
+    [id, "2025-09-03", "a@x.com", "Ann", "NFL", gameId, gameId + " game",
+     market, kind, sel, -110, JSON.stringify(meta), "pending", ""];
+
+  const stored = [PICK_HEADERS,
+    row("e1", "thu", "spread", "favorite", "KC", { line: -3 }),
+    row("e2", "sun", "total", "over", "Over", { total: 44.5 })];
+
+  const h = oddsHarness(stored, odds);
+  const AFTER_THU = Date.parse("2025-09-05T02:00:00Z");
+
+  const mk = (gameId, market, kind, sel, meta) => ({
+    week: "2025-09-03", league: "NFL", gameId, matchup: gameId + " game",
+    market, kind, selection: sel, odds: -110, meta
+  });
+
+  // Changing only the Sunday pick, resending Thursday untouched.
+  const okEdit = h.api.checkKickoffLock_("a@x.com", [
+    mk("thu", "spread", "favorite", "KC", { line: -3 }),        // identical
+    mk("sun", "total", "under", "Under", { total: 44.5 })       // changed
+  ], AFTER_THU);
+  ok(okEdit === null, "the Sunday pick can still be changed", okEdit);
+
+  // Changing the Thursday pick after kickoff.
+  const badEdit = h.api.checkKickoffLock_("a@x.com", [
+    mk("thu", "spread", "underdog", "BUF", { line: 3 }),        // flipped sides
+    mk("sun", "total", "over", "Over", { total: 44.5 })
+  ], AFTER_THU);
+  ok(/Too late/.test(badEdit || ""), "flipping the started game is refused", badEdit);
+
+  // Same side, moved line - a different bet, so also refused.
+  const movedLine = h.api.checkKickoffLock_("a@x.com", [
+    mk("thu", "spread", "favorite", "KC", { line: -6.5 }),
+    mk("sun", "total", "over", "Over", { total: 44.5 })
+  ], AFTER_THU);
+  ok(/Too late/.test(movedLine || ""), "moving the line on a started game is refused", movedLine);
+
+  // Dropping it entirely is a change too.
+  const dropped = h.api.checkKickoffLock_("a@x.com", [
+    mk("sun", "total", "over", "Over", { total: 44.5 })
+  ], AFTER_THU);
+  ok(/cannot change or remove/.test(dropped || ""), "withdrawing it is refused", dropped);
+}
+
+section("kickoff lock: it does not overreach");
+{
+  const odds = { NFL: [{ id: "g1", commence_time: "2025-09-07T17:00:00Z", home_team: "A", away_team: "B" }], NCAAF: [] };
+  const h = oddsHarness([], odds);
+  const p = { week: "2025-09-03", league: "NFL", gameId: "unknown-to-the-feed",
+              matchup: "X @ Y", market: "spread", kind: "favorite",
+              selection: "X", odds: -110, meta: { line: -3 } };
+
+  ok(h.api.checkKickoffLock_("a@x.com", [p], Date.now()) === null,
+     "a game the feed has never heard of is allowed, not blocked");
+
+  ok(h.api.checkKickoffLock_("a@x.com", [], Date.now()) === null, "an empty submission is not an error");
+
+  // A feed outage must not stop the league submitting.
+  const broken = oddsHarness([], null);
+  ok(broken.api.checkKickoffLock_("a@x.com", [
+      { week: "2025-09-03", league: "NFL", gameId: "g1", market: "spread",
+        kind: "favorite", selection: "A", odds: -110, meta: { line: -3 } }
+    ], Date.now()) === null,
+    "an odds outage fails open rather than locking everyone out");
+}
+
+section("kickoff lock: signatures compare the right things");
+{
+  const h = oddsHarness([], { NFL: [], NCAAF: [] });
+  const sig = h.api.pickSignature_;
+  const base = { gameId: "g1", market: "spread", kind: "favorite",
+                 selection: "Kansas City Chiefs", meta: { line: -3 } };
+
+  ok(sig(base) === sig({ ...base, meta: { line: -3, price: -110 } }),
+     "an unrelated meta field does not make it a different pick");
+  ok(sig(base) === sig({ ...base, selection: "Kansas City  Chiefs!" }),
+     "punctuation and spacing in the team name do not");
+  ok(sig(base) !== sig({ ...base, meta: { line: -6.5 } }), "a moved line does");
+  ok(sig(base) !== sig({ ...base, kind: "underdog" }), "the other side does");
+  ok(sig(base) !== sig({ ...base, gameId: "g2" }), "a different game does");
+  ok(sig({ ...base, meta: '{"line":-3}' }) === sig(base),
+     "meta as a JSON string reads the same as an object");
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

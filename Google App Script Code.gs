@@ -684,7 +684,8 @@ function capabilities_() {
     backtest:  typeof backtestWeek       === 'function',
     weeksort:  typeof weekKey_           === 'function',
     seasons:   typeof getSeasons_       === 'function',
-    stats:     typeof getStats_         === 'function'
+    stats:     typeof getStats_         === 'function',
+    kickofflock: typeof checkKickoffLock_ === 'function'
   };
   return Object.keys(has).filter(function (k) { return has[k]; });
 }
@@ -744,6 +745,10 @@ function doPost(e) {
       // Validate picks server-side (4 standard + 1 ML, ML odds > -200)
       const vErr = validateSubmission_(body.picks);
       if (vErr) return asJson(err(vErr));
+      // Shape first, then timing: telling somebody their Sunday pick is late
+      // before telling them they have three NFL games would be the wrong order.
+      const kErr = checkKickoffLock_(email, body.picks);
+      if (kErr) return asJson(err(kErr));
       return asJson(ok(submitPicks_(email, user || email, body.picks)));
     }
     if (fn === 'grade') {
@@ -2739,4 +2744,112 @@ function getStats_(season) {
     players: Object.keys(stats).filter(function (k) { return k !== STAT_ALL; }).sort(),
     stats:   stats
   };
+}
+
+// ===== KICKOFF LOCK ==========================================================
+// A pick is legal until its own game starts. Not one deadline for the slate -
+// each game locks itself, so a Sunday pick can still be made after Thursday
+// night has been and gone.
+//
+// Enforced here rather than in the browser. The page dims started games, but
+// that is a courtesy: the request can be replayed by hand, so the server has
+// to be the one that says no.
+//
+// The awkward part is that a submission replaces the whole week. Somebody
+// changing their Sunday pick on Saturday is re-sending all five, including the
+// Thursday one whose game is long over. So the rule is not "no picks on
+// started games" - it is "the picks on started games must be exactly what they
+// already were". Unchanged ones pass through; a new, altered or withdrawn one
+// on a game under way does not.
+
+/** gameId -> kickoff ISO, from the odds feed. Cached, so normally free. */
+function kickoffMap_(leagues) {
+  const map = {};
+  for (const lg of leagues) {
+    try {
+      const payload = getOdds_(lg, null, {});
+      for (const g of (payload.games || [])) {
+        if (g.id && g.kickoff) map[String(g.id)] = g.kickoff;
+      }
+    } catch (_) {
+      // A feed hiccup must not stop everybody submitting. Unknown kickoffs
+      // fall through to "not started" below, which is the forgiving side.
+    }
+  }
+  return map;
+}
+
+/**
+ * What makes two picks the same pick. Selection is normalised so a change of
+ * punctuation is not read as a different team, but the line is not rounded -
+ * moving from -6.5 to -7 is a different bet and must count as one.
+ */
+function pickSignature_(p) {
+  const meta = parseMeta_(p.meta) || {};
+  const n = function (v) {
+    return (v === undefined || v === null || v === '') ? '' : String(Number(v));
+  };
+  return [
+    String(p.gameId || ''),
+    String(p.market || '').toLowerCase(),
+    String(p.kind || '').toLowerCase(),
+    _normName_(p.selection || ''),
+    n(meta.line),
+    n(meta.total)
+  ].join('|');
+}
+
+/**
+ * Returns an error string, or null when the submission is allowed.
+ * `now` is injectable so the rule can be tested without waiting for a Sunday.
+ */
+function checkKickoffLock_(email, picks, now) {
+  if (!picks || !picks.length) return null;
+  const at = (now === undefined ? Date.now() : now);
+
+  const leagues = {};
+  for (const p of picks) {
+    const lg = String(p.league || '').toUpperCase();
+    if (lg) leagues[lg] = true;
+  }
+  const kick = kickoffMap_(Object.keys(leagues));
+
+  function startedAt_(p) {
+    // The feed is the authority. A kickoff sent by the page is only a fallback
+    // for a game the feed has dropped, and a client could lie about it - which
+    // is worth knowing, and acceptable in a league of eight friends.
+    const iso = kick[String(p.gameId || '')] || p.kickoff;
+    if (!iso) return false;                       // unknown: let it through
+    const t = new Date(iso).getTime();
+    return isFinite(t) && t <= at;
+  }
+
+  const week = String((picks[0] && picks[0].week) || '');
+  const needle = String(email).trim().toLowerCase();
+  const existing = week
+    ? readPicks_().filter(function (p) {
+        return p.week === week && p.email.trim().toLowerCase() === needle;
+      })
+    : [];
+
+  const incoming = {}, already = {};
+  for (const p of picks)    if (startedAt_(p)) incoming[pickSignature_(p)] = p;
+  for (const p of existing) if (startedAt_(p)) already[pickSignature_(p)] = p;
+
+  const name = function (p) { return p.matchup || p.gameId || 'that game'; };
+
+  for (const sig of Object.keys(incoming)) {
+    if (!already[sig]) {
+      return 'Too late for ' + name(incoming[sig]) + ' - that game has already '
+        + 'started. Your other picks were not saved; take that one back to what '
+        + 'it was, or pick a game that has not kicked off.';
+    }
+  }
+  for (const sig of Object.keys(already)) {
+    if (!incoming[sig]) {
+      return 'You cannot change or remove your pick on ' + name(already[sig])
+        + ' - that game has already started.';
+    }
+  }
+  return null;
 }

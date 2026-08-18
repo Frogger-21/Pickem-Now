@@ -269,6 +269,7 @@ Layout, nesting, and classes are otherwise free.
 | `.tab` with `data-tab="picks\|mine\|board\|queries\|hof"` | tab buttons |
 | `.view` with `id="view-picks"` … `id="view-hof"` | tab panels; hidden ones carry class `hidden` |
 | `.seasonBar` | wrapper round the season selector; gets class `stale` when not on the newest season |
+| `.game.started` | a game whose kickoff has passed; dimmed, chips disabled |
 
 ### Header
 
@@ -335,6 +336,35 @@ copy can mirror it. Exactly **5** picks:
 The submit button stays disabled until all of that holds. Do not relax it
 client-side; the server will refuse anyway and the error is worse UX than a
 disabled button.
+
+### Kickoff lock
+
+**A pick is legal until its own game starts.** Not one deadline for the slate -
+each game locks itself, so a Sunday pick can still be made after Thursday night
+is over.
+
+The server enforces it in `checkKickoffLock_`, reading kickoffs from the odds
+feed (cached, so it costs nothing). The page must **dim games whose kickoff has
+passed and stop their chips responding** - that is a courtesy, not the
+enforcement, because the request can be replayed by hand.
+
+The subtle part: a submission **replaces the whole week**, so somebody changing
+their Sunday pick on Saturday re-sends all five, including the Thursday one
+whose game is long over. The rule is therefore not "no picks on started games"
+but *"the picks on started games must be exactly what they already were"*:
+
+| Situation | Result |
+|---|---|
+| Editing a pick whose game has not started | fine, even if other games have |
+| Re-sending an unchanged pick on a started game | fine |
+| Changing side, or moving the line, on a started game | refused |
+| Removing a pick on a started game | refused |
+| A first submission on a game already under way | refused |
+
+A game the feed has never heard of, or an odds outage, **fails open** - an
+outage must not stop the whole league submitting. Use `gameStarted(game)` on
+the page; it deliberately treats a missing or unparseable kickoff as *not*
+started, matching the server.
 
 ### Weeks
 

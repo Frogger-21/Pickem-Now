@@ -58,6 +58,11 @@
       .wrap{ padding:12px; }
     }
 
+    /* A game that has kicked off. Still readable - people want to see what the
+       line was - but plainly out of reach. */
+    .game.started{opacity:.45;filter:saturate(.5)}
+    .game.started .chip,.chip:disabled{cursor:not-allowed}
+
     /* Season selector - top left, above the brand, because it governs every
        tab rather than belonging to any one of them. */
     .seasonBar{display:flex;align-items:center;gap:8px;margin-bottom:6px}
@@ -670,7 +675,13 @@ function renderGames(){
   for(const g of list){
     const card=document.createElement('div'); card.className='game';
     const dt=g.kickoff?new Date(g.kickoff):null; const when=dt?dt.toLocaleString():'TBD';
-    card.innerHTML=`<div class="hdr"><span>${g.away} @ ${g.home}</span><span class="pill">${g.league}</span></div><div class="meta">${when}</div><div class="markets"></div>`;
+    /* A pick is legal until its own game starts, so a started game is dimmed
+       and its chips stop responding. The server enforces the same rule - this
+       only saves somebody assembling five picks and being refused at the end.
+       An unknown kickoff counts as not started, which is what the server does. */
+    const started = gameStarted(g);
+    if (started) card.classList.add('started');
+    card.innerHTML=`<div class="hdr"><span>${g.away} @ ${g.home}</span><span class="pill">${started?'Started':g.league}</span></div><div class="meta">${when}${started?' &middot; too late to pick':''}</div><div class="markets"></div>`;
     const m=card.querySelector('.markets');
 
     // SPREAD
@@ -707,9 +718,21 @@ function renderGames(){
   if(!list.length){ root.innerHTML='<div class="hint">No games in this Wed–Tue window.</div>'; }
 }
 
+/* Kickoff in the past. An absent or unparseable kickoff is NOT started - the
+   forgiving side, and the same call the server makes. */
+function gameStarted(game){
+  const iso = game && (game.kickoff || game.commence_time);
+  if (!iso) return false;
+  const t = new Date(iso).getTime();
+  return isFinite(t) && t <= Date.now();
+}
+
 function marketChip(game,market,kind,selection,meta,label){
   const d=document.createElement('button'); d.className='chip'; d.dataset.key=chipKey(game,market,kind,selection);
-  d.textContent=label; d.addEventListener('click',()=>addPick(game,market,kind,selection,meta)); return d;
+  d.textContent=label;
+  if (gameStarted(game)) { d.disabled = true; d.title = 'This game has already started'; }
+  else d.addEventListener('click',()=>addPick(game,market,kind,selection,meta));
+  return d;
 }
 function chipKey(game,market,kind,selection){ return `${game.id}|${market}|${kind}|${selection}`; }
 function updateChipSelection(){

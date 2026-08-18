@@ -85,7 +85,7 @@ function harness(apiResponses) {
   const src = HTML.match(/<script>([\s\S]*)<\/script>/)[1];
 
   const exported = "return { SEASON, apiUrl, loadSeasons, buildQueries, renderQuery,"
-    + " drawBars, esc, pctText, recText, unitText, Q, boot: document._boot };";
+    + " drawBars, esc, pctText, recText, unitText, Q, gameStarted, boot: document._boot };";
 
   const fn = new Function(
     "localStorage", "sessionStorage", "location", "console", "document", "fetch", "window",
@@ -265,6 +265,18 @@ function run4() {
     ok(!threw, "no exception", threw && threw.message);
     ok(/No graded picks/.test(h.get("#qChart").innerHTML), "it says so plainly",
        h.get("#qChart").innerHTML);
+
+
+    section("started games are recognised on the page too");
+    const gs = h.api.gameStarted;
+    const past = new Date(Date.now() - 3600e3).toISOString();
+    const soon = new Date(Date.now() + 3600e3).toISOString();
+    ok(gs({ kickoff: past }) === true,  "an hour ago has started");
+    ok(gs({ kickoff: soon }) === false, "an hour away has not");
+    ok(gs({ commence_time: past }) === true, "commence_time is read as well as kickoff");
+    ok(gs({}) === false, "no kickoff is treated as not started - the same as the server");
+    ok(gs({ kickoff: "not a date" }) === false, "and so is an unparseable one");
+    ok(gs(null) === false, "a missing game does not throw");
 
     section("a stats failure is reported, not silent");
     const dead = harness({ seasons: SEASONS });   // no stats endpoint
