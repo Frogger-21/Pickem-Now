@@ -186,7 +186,7 @@
     .pickRow{display:flex;align-items:stretch;background:var(--surface);
              border:1px solid var(--line-soft);border-radius:11px;margin-bottom:6px;
              overflow:hidden;min-height:58px}
-    .pickRow .bar{width:3px;flex:none;background:var(--pend)}
+    .pickRow .bar{position:static;width:3px;flex:none;background:var(--pend)}
     .pickRow.win  .bar{background:var(--win)}
     .pickRow.loss .bar{background:var(--loss)}
     .pickRow.live .bar{background:var(--accent)}
@@ -251,11 +251,15 @@
                    text-align:right;min-width:92px}
     .track{position:relative;height:22px;background:var(--surface);
            border:1px solid var(--line-soft);border-radius:6px;overflow:hidden}
-    .bar{position:absolute;top:0;bottom:0;border-radius:5px;background:var(--accent-dim)}
-    .bar.top{background:var(--accent)}
-    .bar.neg,.bar.loss{background:var(--loss)}
-    .bar.pos,.bar.win{background:var(--accent-dim)}
-    .zero{position:absolute;top:0;bottom:0;width:1px;background:var(--faint)}
+    /* Scoped to .track deliberately. An unscoped .bar also matched the status
+       stripe in a pick row, which then took position:absolute with no
+       positioned ancestor and stretched down the whole page as a green line
+       against the left edge, clipping the header with it. */
+    .track .bar{position:absolute;top:0;bottom:0;border-radius:5px;background:var(--accent-dim)}
+    .track .bar.top{background:var(--accent)}
+    .track .bar.neg,.track .bar.loss{background:var(--loss)}
+    .track .bar.pos,.track .bar.win{background:var(--accent-dim)}
+    .track .zero{position:absolute;top:0;bottom:0;width:1px;background:var(--faint)}
     .chartEmpty{padding:26px 18px;text-align:center;color:var(--faint);font-size:13px;
                 border:1px dashed var(--line);border-radius:12px}
     #qNote{margin-top:12px;color:var(--faint);font-size:12px;line-height:1.5}

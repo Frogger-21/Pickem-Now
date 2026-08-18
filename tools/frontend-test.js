@@ -522,6 +522,36 @@ function run4() {
          h.get("#ruleML").textContent);
     }
 
+    section("no single-class rule positions absolutely");
+    {
+      /* The bug this catches: .bar was used for both the Queries chart bars and
+         the status stripe on a pick row. The chart rule set position:absolute
+         with no scope, so the stripe took it too, found no positioned ancestor,
+         and stretched down the entire page as a green line against the left
+         edge - clipping the header on its way past.
+         A bare single-class selector that positions absolutely is a collision
+         waiting for the next component that reuses the word. */
+      const css = HTML.match(/<style>([\s\S]*?)<\/style>/)[1];
+      const bare = [];
+      const rule = /([^{}]+)\{([^}]*)\}/g;
+      let m;
+      while ((m = rule.exec(css)) !== null) {
+        if (!/position\s*:\s*absolute/.test(m[2])) continue;
+        const sel = m[1].replace(/\/\*[\s\S]*?\*\//g, "").trim().replace(/\s+/g, " ");
+        for (const part of sel.split(",")) {
+          if (/^\.[A-Za-z0-9_-]+$/.test(part.trim())) bare.push(part.trim());
+        }
+      }
+      ok(bare.length === 0,
+         "every absolutely-positioned rule names a parent", bare.join(", "));
+
+      const track = css.slice(css.indexOf(".track .bar"), css.indexOf(".track .bar") + 120);
+      ok(/position:absolute/.test(track), "the chart bar is still absolute inside its track");
+      const stripe = css.slice(css.indexOf(".pickRow .bar"), css.indexOf(".pickRow .bar") + 90);
+      ok(/position:static/.test(stripe),
+         "and the pick stripe says outright that it is not", stripe.slice(0, 60));
+    }
+
     section("a pick row stays on one line per field");
     {
       /* The bug this exists for: the row was a grid whose 1fr track is
