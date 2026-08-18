@@ -1,0 +1,1031 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Picks Game — NFL & College Football</title>
+  <style>
+    :root{ --bg:#0b1020; --card:#121933; --muted:#6772a4; --text:#e8ecff; --accent:#6ea8fe; --good:#8fff9f; }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,Segoe UI,Roboto,Inter,Arial;background:#0b1020;color:var(--text)}
+    .wrap{max-width:1100px;margin:0 auto;padding:20px}
+    header{display:flex;align-items:center;gap:16px;justify-content:space-between;padding:8px 0}
+    .brand{font-weight:800} .sub{color:var(--muted);font-size:12px}
+    .card{background:linear-gradient(180deg,#121933,#0f1731);border:1px solid #1f2a52;border-radius:18px;padding:16px}
+    .controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    button,select,input[type=text],input[type=email]{background:#1a2454;border:1px solid #2a3a7a;color:var(--text);padding:8px 12px;border-radius:10px;font-weight:600;cursor:pointer}
+    input[type=text],input[type=email]{cursor:text}
+    button:hover{filter:brightness(1.08)}
+    .ghost{background:#111a3d}
+    .pill{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:#162052;border:1px solid #28377d;font-size:12px;color:#cfe1ff}
+    .tabs{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+    .tab{padding:8px 12px;border-radius:10px;background:#111a3d;border:1px solid #23306a;cursor:pointer}
+    .tab.active{background:#1b2a64;box-shadow:inset 0 0 0 1px #3d57c7}
+    .games{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+    .game{border:1px solid #22306a;border-radius:14px;padding:12px;background:#0f1734;display:flex;flex-direction:column;gap:10px}
+    .hdr{display:flex;justify-content:space-between;align-items:center;font-weight:700}
+    .meta{color:#a8b3e1;font-size:12px}
+    .markets{display:flex;gap:8px;flex-wrap:wrap}
+    .chip{padding:8px 10px;border-radius:10px;border:1px solid #2b3a7a;background:#141f45;font-size:12px;transition:transform .04s,box-shadow .08s,background .1s,border-color .1s}
+    .chip:active{transform:translateY(1px)}
+    .chip.selected{background:#1f2b63;border-color:#6ea8fe;box-shadow:0 0 0 2px rgba(110,168,254,.35) inset}
+    .pickRow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px}
+    .tag{font-size:11px;padding:4px 8px;border-radius:999px;border:1px solid #30408b;background:#111a3d;color:#cfe1ff}
+    .table{width:100%;border-collapse:collapse}
+    .table th,.table td{padding:8px;border-bottom:1px solid #22306a;text-align:left}
+    .hint{color:var(--muted);font-size:12px}
+    .hr{height:1px;background:#1f2b5c;margin:10px 0}
+    .right{margin-left:auto}
+    .hidden{display:none}
+
+    /* Alerts */
+    .alert{padding:10px 12px;border-radius:10px;border:1px solid transparent;font-weight:700;margin-left:auto}
+    .alert.ok{background:rgba(54,211,153,0.12);border-color:rgba(54,211,153,0.45);color:#b8ffde;box-shadow:0 0 0 2px rgba(54,211,153,0.15) inset}
+    .alert.err{background:rgba(239,68,68,0.14);border-color:rgba(239,68,68,0.55);color:#ffbebe;box-shadow:0 0 0 2px rgba(239,68,68,0.18) inset}
+    .status{margin-left:0}
+
+    /* Mobile-friendly My Picks table */
+    @media (max-width: 640px){
+      #myPicksTable { display:block; border-collapse:separate; border-spacing:0; }
+      #myPicksTable thead { display:none; }
+      #myPicksTable tbody { display:block; }
+      #myPicksTable tr {
+        display:block; background:#0f1734; border:1px solid #22306a; border-radius:12px;
+        padding:10px; margin-bottom:12px;
+      }
+      #myPicksTable td { display:block; width:100%; border-bottom:0; padding:6px 8px; white-space:normal; word-break:break-word; }
+      #myPicksTable td::before{ content: attr(data-label); display:block; font-weight:700; color:#a8b3e1; margin-bottom:2px; }
+      .wrap{ padding:12px; }
+    }
+
+    /* A game that has kicked off. Still readable - people want to see what the
+       line was - but plainly out of reach. */
+    .game.started{opacity:.45;filter:saturate(.5)}
+    .game.started .chip,.chip:disabled{cursor:not-allowed}
+
+    /* Season selector - top left, above the brand, because it governs every
+       tab rather than belonging to any one of them. */
+    .seasonBar{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+    .seasonBar label{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+    .seasonBar select{padding:4px 8px;font-size:12px;border-radius:8px}
+    .seasonBar.stale select{border-color:var(--accent);box-shadow:0 0 0 2px rgba(110,168,254,.25)}
+
+    /* Charts. Bars are divs rather than a charting library: one file, no CDN,
+       nothing to break at load time, and it reads fine when text-only. */
+    .chartRows{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+    .chartRow{display:grid;grid-template-columns:minmax(120px,220px) 1fr auto;gap:10px;align-items:center}
+    .chartRow .lbl{font-size:13px;color:#cfe1ff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .chartRow .val{font-size:12px;color:#a8b3e1;font-variant-numeric:tabular-nums;text-align:right;min-width:104px}
+    .track{position:relative;height:20px;background:#0f1734;border:1px solid #22306a;border-radius:6px;overflow:hidden}
+    .bar{position:absolute;top:0;bottom:0;border-radius:5px}
+    .bar.pos{background:linear-gradient(90deg,#2f6df6,#6ea8fe)}
+    .bar.neg{background:linear-gradient(90deg,#c0392b,#ef6d5e)}
+    .bar.win{background:linear-gradient(90deg,#1f9d55,#8fff9f)}
+    .bar.loss{background:linear-gradient(90deg,#8e2f2f,#ef6d5e)}
+    /* Where a scale crosses zero, mark it so a negative bar is unmistakable. */
+    .zero{position:absolute;top:0;bottom:0;width:1px;background:#5566a8}
+    .chartEmpty{padding:18px;text-align:center;color:var(--muted);
+                border:1px dashed #2a3a7a;border-radius:12px}
+
+    /* Hall of Fame tiles */
+    .hofGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+    .hofCard{background:#0f1734;border:1px solid #22306a;border-radius:14px;padding:14px;display:flex;flex-direction:column;align-items:center;text-align:center}
+    .hofCard img{width:96px;height:auto;display:block;filter:drop-shadow(0 4px 12px rgba(0,0,0,.35));margin-bottom:10px}
+    .hofCard .caption{font-weight:700;color:#e8ecff}
+    .hofCard .sub{color:#a8b3e1;font-size:13px;margin-top:2px}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <div class="seasonBar">
+        <label for="seasonPicker">Season</label>
+        <select id="seasonPicker"><option>loading...</option></select>
+      </div>
+      <div class="brand">Picks Game</div>
+      <div class="sub">Pick 2 NFL, 2 CFB • 1 Over, 1 Under, 1 Favorite, 1 Underdog • + 1 Moneyline (&gt; -200)</div>
+    </div>
+    <div class="controls">
+      <span id="userBadge" class="pill hidden"></span>
+      <input id="nameInput" type="text" placeholder="Your name"/>
+      <input id="emailInput" type="email" placeholder="you@example.com"/>
+      <button id="btnLogout" class="hidden">Sign out</button>
+    </div>
+  </header>
+
+  <div class="card">
+    <div class="tabs">
+      <div class="tab active" data-tab="picks">Make Picks</div>
+      <div class="tab" data-tab="mine">My Picks</div>
+      <div class="tab" data-tab="board">Scoreboard</div>
+      <div class="tab" data-tab="queries">Queries</div>
+      <div class="tab" data-tab="hof">Hall of Fame</div>
+    </div>
+    <div class="hr"></div>
+
+    <section id="view-picks" class="view">
+      <div class="controls" style="margin-bottom:12px">
+        <button id="btnPrevWeek" class="ghost">← Prev</button>
+        <span id="weekLabel" class="pill">Week: —</span>
+        <button id="btnNextWeek" class="ghost">Next →</button>
+        <button id="btnThisWeek" class="ghost">This Week</button>
+        <span class="right"></span>
+        <select id="sportFilter">
+          <option value="ALL">All games</option>
+          <option value="NFL">NFL</option>
+          <option value="NCAAF">College (FBS)</option>
+        </select>
+        <button class="ghost" id="btnRefresh">Refresh</button>
+      </div>
+
+      <!-- Rules / constraints -->
+      <div class="pickRow" id="rulesBar" style="margin-top:0">
+        <strong>Your required picks:</strong>
+        <span id="ruleNFL" class="tag">NFL: 0/2</span>
+        <span id="ruleCFB" class="tag">CFB: 0/2</span>
+        <span id="ruleOU"  class="tag">O/U: 0 Over / 0 Under</span>
+        <span id="ruleFD"  class="tag">Fav/Dog: 0 Fav / 0 Dog</span>
+        <span id="ruleML"  class="tag">ML: 0/1 (odds &gt; -200)</span>
+        <span class="right alert status" id="ruleMsg">Selections must satisfy all constraints (incl. 1 ML &gt; -200).</span>
+      </div>
+
+      <!-- SUBMIT BUTTON -->
+      <div class="controls" id="submitRow" style="margin:10px 0 10px">
+        <button class="primary" id="btnSubmit" disabled>Submit Picks</button>
+        <span id="submitStatus" class="alert status"></span>
+      </div>
+
+      <!-- PICKS PREVIEW (moved here) -->
+      <div id="picksList" style="margin:0 0 14px"></div>
+
+      <div class="hr"></div>
+
+      <!-- Game cards -->
+      <div id="games" class="games" aria-live="polite"></div>
+
+      <div class="hr"></div>
+    </section>
+
+    <section id="view-mine" class="view hidden">
+      <h3>My Picks</h3>
+      <table class="table" id="myPicksTable">
+        <thead><tr>
+          <th>Week</th><th>Sport</th><th>Matchup</th><th>Market</th>
+          <th>Selection</th><th>Line</th><th>Odds</th><th>Status</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section id="view-board" class="view hidden">
+      <div class="pickRow" style="margin-top:0">
+        <h3 style="margin:0">Season</h3>
+        <span class="right"><button class="ghost" id="btnRefreshBoard">Refresh</button></span>
+      </div>
+      <table class="table" id="boardTable">
+        <thead><tr>
+          <th>User</th><th>Weeks</th><th>W</th><th>L</th><th>P</th><th>Pct</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+
+      <div class="pickRow" style="margin-top:18px">
+        <h3 style="margin:0">By week</h3>
+        <select id="weekPicker" style="margin-left:8px"></select>
+        <span class="right alert status" id="weekStatus"></span>
+      </div>
+      <table class="table" id="weekTable">
+        <thead><tr>
+          <th>User</th><th>W</th><th>L</th><th>P</th><th>Pending</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section id="view-queries" class="view hidden">
+      <div class="controls" style="margin-bottom:12px">
+        <label for="qPlayer">Who</label>
+        <select id="qPlayer"></select>
+        <label for="qView">Show</label>
+        <select id="qView">
+          <option value="markets">Win rate by market</option>
+          <option value="units">Units won by market</option>
+          <option value="leagues">NFL vs college</option>
+          <option value="weeks">Record by week</option>
+          <option value="cum">Cumulative wins over the season</option>
+          <option value="teamsW">Most successful teams picked</option>
+          <option value="teamsL">Teams that cost the most</option>
+          <option value="players">Everyone, side by side</option>
+        </select>
+      </div>
+      <div id="qSummary" class="hint"></div>
+      <div id="qChart"></div>
+      <div id="qNote" class="hint" style="margin-top:10px"></div>
+    </section>
+
+    <section id="view-hof" class="view hidden">
+      <h3>Hall of Fame</h3>
+      <div class="hofGrid">
+        <div class="hofCard">
+          <img src="trophy-gold-transparent-background-19.webp" alt="Trophy">
+          <div class="caption">Year 2022-2023 Champion</div>
+          <div class="sub">Grant</div>
+        </div>
+        <div class="hofCard">
+          <img src="trophy-gold-transparent-background-19.webp" alt="Trophy">
+          <div class="caption">Year 2023-2024 Champion</div>
+          <div class="sub">Clarke</div>
+        </div>
+        <div class="hofCard">
+          <img src="trophy-gold-transparent-background-19.webp" alt="Trophy">
+          <div class="caption">Year 2024-2025 Champion</div>
+          <div class="sub">Ivan</div>
+        </div>
+        <div class="hofCard">
+          <img src="trophy-gold-transparent-background-19.webp" alt="Trophy">
+          <div class="caption">Year 2025-2026 Champion</div>
+          <div class="sub">Whit</div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<script>
+/* =================== CONFIG =================== */
+// The Apps Script Web App URL (ends in /exec). It is NOT stored in this repo:
+// Netlify swaps the placeholder below for the APPS_SCRIPT_URL environment
+// variable at build time (see tools/inject-config.sh).
+//
+// To run this file straight off your desktop, set the override once in the
+// browser console and reload:
+//     localStorage.setItem('pg_api', 'https://script.google.com/.../exec')
+/* A pg_api override in localStorage beats the URL baked in at build time, and
+   it survives every redeploy. That is the point of it for local testing, but
+   it also means a stale one silently breaks the live site for whoever set it,
+   with no symptom beyond "Failed to fetch" and no way out that does not
+   involve a developer console. So: visiting /?reset=1 clears it. */
+if (/[?&]reset=1(&|$)/.test(location.search)) {
+  try { localStorage.removeItem('pg_api'); } catch (_) {}
+  location.replace(location.pathname);
+}
+
+const CONFIG = {
+  API: (function () {
+    try { const o = localStorage.getItem('pg_api'); if (o) return o; } catch (_) {}
+    return '__APPS_SCRIPT_URL__';
+  })(),
+  /* True when an override is in play, so the page can say so rather than
+     leaving you to wonder why it disagrees with what was deployed. */
+  OVERRIDDEN: (function () {
+    try { return !!localStorage.getItem('pg_api'); } catch (_) { return false; }
+  })()
+};
+
+/** Nothing works without a backend URL, so say so plainly instead of letting
+    every fetch fail with a confusing parse error.
+    Deliberately tests the shape of the value rather than comparing against a
+    named placeholder constant: sed substitutes the token everywhere, so such
+    a constant would itself be rewritten and always match. */
+function apiConfigured() {
+  return /^https?:\/\/\S+$/.test(String(CONFIG.API || ''));
+}
+
+/* =================== DOM HELPERS =================== */
+const el  = s => document.querySelector(s);
+const els = s => Array.from(document.querySelectorAll(s));
+const rid = () => Math.random().toString(36).slice(2,9);
+
+/* =================== DATE HELPERS (Wed–Tue) =================== */
+function startOfWedWeek(d){ const dt=new Date(d); dt.setHours(0,0,0,0); const dow=dt.getDay(); const diff=(dow-3+7)%7; dt.setDate(dt.getDate()-diff); dt.setHours(0,0,0,0); return dt; }
+function addDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
+function fmtShort(d){ return new Date(d).toLocaleDateString(undefined,{ month:'short', day:'numeric', year:'numeric' }); }
+function inRangeLocal(iso,start,end){ if(!iso) return false; const t=new Date(iso); const a=new Date(start); a.setHours(0,0,0,0); const b=new Date(end); b.setHours(23,59,59,999); return t>=a && t<=b; }
+function isoDate(d){ const x=new Date(d); x.setHours(0,0,0,0); return x.toISOString().slice(0,10); }
+
+/* =================== STATE =================== */
+const state = {
+  name:null, email:null,
+  weekStart:startOfWedWeek(new Date()),
+  gamesAll:[], games:[],
+  picks:[] // 5 total: 4 standard + 1 ML
+};
+
+function updateWeekLabel(){ const end=addDays(state.weekStart,6); el('#weekLabel').textContent=`Week: ${fmtShort(state.weekStart)} – ${fmtShort(end)}`; }
+
+/* =================== QUERIES =================== */
+/* Charts are plain divs. The whole app is one file with no build step and no
+   CDN, and a charting library would be the only thing on the page able to fail
+   at load time. Bars made of elements are also legible to a screen reader,
+   which a canvas is not. */
+
+const Q = { data: null, season: null };
+
+const MARKET_LABEL = {
+  moneyline:  'Moneyline',
+  spread_fav: 'Spread - favourite',
+  spread_dog: 'Spread - underdog',
+  spread_pk:  'Spread - pick em',
+  over:       'Total - over',
+  under:      'Total - under'
+};
+
+function esc(v) {
+  return String(v == null ? '' : v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+const pctText  = (r) => (r.w + r.l) ? (r.w / (r.w + r.l)).toFixed(3).replace(/^0/, '') : '-';
+const recText  = (r) => r.w + '-' + r.l + (r.p ? '-' + r.p : '');
+const unitText = (u) => (u > 0 ? '+' : '') + Number(u).toFixed(2) + 'u';
+
+/* One horizontal bar chart. Values can be negative (units), so the scale is
+   drawn around zero rather than assuming everything grows rightwards. */
+function drawBars(host, rows) {
+  if (!rows.length) {
+    host.innerHTML = '<div class="chartEmpty">Nothing to show for this selection.</div>';
+    return;
+  }
+  const vals = rows.map(r => r.value);
+  const lo = Math.min(0, Math.min.apply(null, vals));
+  const hi = Math.max(0, Math.max.apply(null, vals));
+  const span = (hi - lo) || 1;
+  const zeroPct = ((0 - lo) / span) * 100;
+
+  host.innerHTML = '<div class="chartRows">' + rows.map(r => {
+    const v = Number(r.value) || 0;
+    const from  = ((Math.min(v, 0) - lo) / span) * 100;
+    const width = (Math.abs(v) / span) * 100;
+    const cls = r.cls || (v < 0 ? 'neg' : 'pos');
+    return '<div class="chartRow">'
+      + '<div class="lbl" title="' + esc(r.label) + '">' + esc(r.label) + '</div>'
+      + '<div class="track">'
+      +   (lo < 0 ? '<div class="zero" style="left:' + zeroPct.toFixed(2) + '%"></div>' : '')
+      +   '<div class="bar ' + cls + '" style="left:' + from.toFixed(2)
+      +   '%;width:' + Math.max(width, 0.6).toFixed(2) + '%"></div>'
+      + '</div>'
+      + '<div class="val">' + esc(r.note || '') + '</div>'
+      + '</div>';
+  }).join('') + '</div>';
+}
+
+async function loadQueryData() {
+  const season = SEASON.current || 'all';
+  if (Q.data && Q.season === season) return Q.data;
+  const r = await fetch(apiUrl('stats'));
+  const j = await r.json();
+  if (!j || j.ok === false) throw new Error((j && j.error) || 'stats unavailable');
+  Q.data = j;
+  Q.season = season;
+  return j;
+}
+
+async function buildQueries() {
+  const chart = el('#qChart'), summary = el('#qSummary'), note = el('#qNote');
+  chart.innerHTML = '<div class="chartEmpty">Loading...</div>';
+  summary.textContent = '';
+  note.textContent = '';
+
+  let data;
+  try {
+    data = await loadQueryData();
+  } catch (e) {
+    chart.innerHTML = '<div class="chartEmpty">Could not load stats: '
+      + esc(e.message || e) + '</div>';
+    return;
+  }
+
+  /* Keep whoever was selected if they exist in this season too - changing
+     season should not silently throw you back to Everyone. */
+  const sel = el('#qPlayer');
+  const previous = sel.value;
+  const players = data.players || [];
+  sel.innerHTML = '<option value="__all__">Everyone combined</option>'
+    + players.map(p => '<option value="' + esc(p) + '">' + esc(p) + '</option>').join('');
+  sel.value = (previous === '__all__' || players.indexOf(previous) >= 0) ? previous : '__all__';
+
+  renderQuery();
+}
+
+function renderQuery() {
+  const chart = el('#qChart'), summary = el('#qSummary'), note = el('#qNote');
+  const data = Q.data;
+  if (!data) return;
+
+  const who = el('#qPlayer').value || '__all__';
+  const view = el('#qView').value;
+  const node = (data.stats || {})[who];
+
+  if (!node) {
+    chart.innerHTML = '<div class="chartEmpty">No graded picks for this selection.</div>';
+    summary.textContent = '';
+    note.textContent = '';
+    return;
+  }
+
+  const label = who === '__all__' ? 'Everyone' : who;
+  const o = node.overall;
+  summary.innerHTML = '<strong>' + esc(label) + '</strong> &middot; '
+    + recText(o) + ' &middot; ' + pctText(o) + ' &middot; ' + unitText(o.units)
+    + ' &middot; season ' + esc(data.season);
+
+  const marketRows = (valueOf, noteOf, cls) =>
+    Object.keys(MARKET_LABEL)
+      .filter(k => node.markets[k] && node.markets[k].n > 0)
+      .map(k => {
+        const r = node.markets[k];
+        return { label: MARKET_LABEL[k], value: valueOf(r), note: noteOf(r), cls: cls };
+      });
+
+  let rows = [], tail = '';
+
+  if (view === 'markets') {
+    rows = marketRows(
+      r => (r.w + r.l) ? r.w / (r.w + r.l) : 0,
+      r => recText(r) + '  ' + pctText(r),
+      'win');
+    tail = 'Win rate ignores pushes, which were never a decision. Break-even '
+         + 'against a -110 line is .524 - anything below that is losing money '
+         + 'however good it looks.';
+
+  } else if (view === 'units') {
+    rows = marketRows(r => r.units, r => unitText(r.units) + '  ' + recText(r), null);
+    tail = 'Profit on one unit staked per pick, at the real price. Unpriced '
+         + 'picks are treated as -110.';
+
+  } else if (view === 'leagues') {
+    const order = ['NFL', 'NCAAF'];
+    const names = Object.keys(node.leagues || {})
+      .sort((a, b) => (order.indexOf(a) + 9) - (order.indexOf(b) + 9) || a.localeCompare(b));
+    rows = names.filter(g => node.leagues[g].n > 0).map(g => {
+      const r = node.leagues[g];
+      return { label: g === 'NCAAF' ? 'College (NCAAF)' : g,
+               value: (r.w + r.l) ? r.w / (r.w + r.l) : 0,
+               note: recText(r) + '  ' + pctText(r) + '  ' + unitText(r.units),
+               cls: 'win' };
+    });
+    tail = 'Two different sports to handicap, so worth separating. Break-even '
+         + 'against a -110 line is .524 in both.';
+
+  } else if (view === 'weeks') {
+    node.weeks.forEach(w => {
+      rows.push({ label: w.week + '  won',  value: w.w, note: String(w.w), cls: 'win' });
+      rows.push({ label: w.week + '  lost', value: w.l, note: String(w.l), cls: 'loss' });
+    });
+    tail = 'Wins and losses for each week, oldest first.';
+
+  } else if (view === 'cum') {
+    let run = 0;
+    rows = node.weeks.map(w => {
+      run += w.w - w.l;
+      return { label: w.week, value: run, note: (run > 0 ? '+' : '') + run };
+    });
+    tail = 'Running total of wins minus losses. Above zero is a winning season '
+         + 'to that point.';
+
+  } else if (view === 'teamsW' || view === 'teamsL') {
+    const wantWins = view === 'teamsW';
+    rows = node.teams.slice()
+      .sort((a, b) => wantWins ? (b.w - a.w) || (a.l - b.l) : (b.l - a.l) || (a.w - b.w))
+      .filter(t => (wantWins ? t.w : t.l) > 0)
+      .slice(0, 15)
+      .map(t => ({
+        label: t.team,
+        value: wantWins ? t.w : t.l,
+        note: recText(t) + '  ' + unitText(t.units),
+        cls: wantWins ? 'win' : 'loss'
+      }));
+    tail = 'Spread and moneyline picks only - a total names Over or Under, not '
+         + 'a team. Top 15 by ' + (wantWins ? 'wins.' : 'losses.');
+
+  } else if (view === 'players') {
+    rows = (data.players || []).map(p => {
+      const r = ((data.stats[p] || {}).overall) || { w: 0, l: 0, p: 0, units: 0 };
+      return {
+        label: p,
+        value: (r.w + r.l) ? r.w / (r.w + r.l) : 0,
+        note: recText(r) + '  ' + pctText(r),
+        cls: 'win'
+      };
+    }).sort((a, b) => b.value - a.value);
+    tail = 'Everyone in this season by win rate. The Who selector does not '
+         + 'apply to this view.';
+  }
+
+  drawBars(chart, rows);
+  note.textContent = tail;
+}
+
+/* =================== SEASON =================== */
+/* One selector governs every tab. It lives in sessionStorage rather than
+   localStorage on purpose: the choice should survive moving between tabs and
+   reloading, but a fresh visit should always open on the newest season rather
+   than whatever somebody was reading about last month. sessionStorage is
+   exactly that - per tab, cleared when the tab closes. */
+const SEASON_KEY = 'pg_season';
+const SEASON = {
+  list: [],
+  get current() {
+    try { return sessionStorage.getItem(SEASON_KEY) || ''; } catch (_) { return ''; }
+  },
+  set current(v) {
+    try { v ? sessionStorage.setItem(SEASON_KEY, v) : sessionStorage.removeItem(SEASON_KEY); }
+    catch (_) {}
+  },
+  get newest() { return this.list.length ? this.list[0].season : ''; }
+};
+
+/* Build an API URL with the chosen season attached. Every read goes through
+   here, so a new endpoint is season-aware without anyone remembering to make
+   it so. */
+function apiUrl(fn, params) {
+  let u = CONFIG.API + '?fn=' + encodeURIComponent(fn);
+  const p = params || {};
+  for (const k of Object.keys(p)) {
+    if (p[k] === undefined || p[k] === null || p[k] === '') continue;
+    u += '&' + k + '=' + encodeURIComponent(p[k]);
+  }
+  const s = SEASON.current;
+  if (s && s !== 'all') u += '&season=' + encodeURIComponent(s);
+  return u;
+}
+
+async function loadSeasons(){
+  const sel = el('#seasonPicker');
+  try{
+    const r = await fetch(CONFIG.API + '?fn=seasons');
+    const j = await r.json();
+    SEASON.list = (j && j.seasons) || [];
+  }catch(_){ SEASON.list = []; }
+
+  if (!SEASON.list.length){
+    sel.innerHTML = '<option value="">No data yet</option>';
+    return;
+  }
+
+  /* A season saved earlier may no longer exist - the data can be reworked
+     between visits. Fall back to the newest rather than silently filtering
+     everything down to nothing. */
+  const saved = SEASON.current;
+  const known = SEASON.list.some(s => s.season === saved);
+  if (!saved || !known) SEASON.current = SEASON.newest;
+
+  sel.innerHTML = SEASON.list.map(s =>
+    '<option value="' + s.season + '">' + s.season +
+    ' (' + s.weeks + ' wk, ' + s.players + ' players)</option>').join('')
+    + '<option value="all">All seasons</option>';
+  sel.value = SEASON.current;
+  markSeasonStale();
+}
+
+/* Highlight the selector when it is not on the newest season, so nobody spends
+   ten minutes wondering why this week's games are missing from the board. */
+function markSeasonStale(){
+  const bar = el('.seasonBar');
+  if (!bar) return;
+  const s = SEASON.current;
+  bar.classList.toggle('stale', !!s && s !== SEASON.newest);
+}
+
+/* Everything that reads season-scoped data, re-run together. */
+async function refreshSeasonViews(){
+  markSeasonStale();
+  const active = el('.tab.active');
+  const tab = active ? active.dataset.tab : 'picks';
+  if (tab === 'board')   await buildBoard();
+  if (tab === 'queries') await buildQueries();
+  if (tab === 'mine')    await loadMyPicks();
+  /* The other tabs read their data when opened, so they pick the new season up
+     on the way in. */
+}
+
+/* =================== ROBUST FETCH ODDS =================== */
+async function fetchOdds(){
+  const root = el('#games');
+  root.innerHTML = '<div class="hint">Loading…</div>';
+  try{
+    const startISO = isoDate(state.weekStart);
+
+    const getJSON = async (url) => {
+      const r = await fetch(url);
+      const text = await r.text();
+      console.log('[odds fetch] URL:', url);
+      console.log('[odds fetch] Raw response (first 400):', text.slice(0,400));
+      try { return JSON.parse(text); }
+      catch(e){ throw new Error('Non-JSON response from server. First 200 chars: ' + text.slice(0,200)); }
+    };
+
+    const nfl   = await getJSON(CONFIG.API+'?fn=odds&league=nfl&weekStart='+startISO+'&nocache=1');
+    const ncaaf = await getJSON(CONFIG.API+'?fn=odds&league=ncaaf&weekStart='+startISO+'&nocache=1');
+
+    if (nfl && nfl.ok === false)     throw new Error('NFL odds error: '   + (nfl.error||'unknown'));
+    if (ncaaf && ncaaf.ok === false) throw new Error('NCAAF odds error: ' + (ncaaf.error||'unknown'));
+
+    const g1=((nfl && nfl.games) ? nfl.games : []).map(x=>Object.assign({},x,{league:'NFL'}));
+    const g2=((ncaaf && ncaaf.games) ? ncaaf.games : []).map(x=>Object.assign({},x,{league:'NCAAF'}));
+    state.gamesAll = g1.concat(g2);
+
+    filterByWeek();
+  }catch(e){
+    console.error('Odds fetch failed', e);
+    // The commonest cause by far is a stale pg_api override pointing at a
+    // deployment that no longer exists, so say so and offer the way out.
+    // Say which address was actually used. Without it, "Failed to fetch" is
+    // indistinguishable between a dead backend, a stale saved override and a
+    // cached copy of this page, and the three have different fixes.
+    const api = String(CONFIG.API || '(none)');
+    const tail = api.length > 60 ? api.slice(0, 45) + '...' + api.slice(-12) : api;
+    const extra = '<br><br>Tried: <code>' + tail + '</code>'
+      + (CONFIG.OVERRIDDEN
+          ? '<br><strong>That address came from this browser, not from the deployed'
+            + ' site.</strong> If it is out of date nothing will load.'
+            + '<br><a href="?reset=1">Clear it and reload.</a>'
+          : '<br>That is the deployed address. If it looks wrong, this page is a'
+            + ' cached copy - reload with Ctrl+Shift+R.');
+    root.innerHTML = '<div class="hint">Failed to load odds from server: '
+      + String(e.message||e) + extra + '</div>';
+  }
+}
+
+/* =================== FILTER + RENDER =================== */
+function filterByWeek(){
+  const start=state.weekStart; const end=addDays(start,6); const sport=el('#sportFilter').value;
+  const list=state.gamesAll
+    .filter(g=> (sport==='ALL'||g.league===sport))
+    .filter(g=> inRangeLocal(g.kickoff||g.commence_time,start,end));
+  state.games=list.map(g=>({
+    id:g.id||`${g.league}-${rid()}`,
+    league:g.league,
+    kickoff:g.kickoff||g.commence_time||null,
+    home:g.home_team||g.home||'HOME',
+    away:g.away_team||g.away||'AWAY',
+    spread:g.spread||null,
+    totals:g.totals||null,
+    moneyline:g.moneyline||null
+  }));
+  renderGames(); updateWeekLabel(); updateChipSelection();
+}
+
+function renderGames(){
+  const root=el('#games'); root.innerHTML='';
+  const list=state.games.slice().sort((a,b)=>(a.kickoff||'').localeCompare(b.kickoff||''));
+  for(const g of list){
+    const card=document.createElement('div'); card.className='game';
+    const dt=g.kickoff?new Date(g.kickoff):null; const when=dt?dt.toLocaleString():'TBD';
+    /* A pick is legal until its own game starts, so a started game is dimmed
+       and its chips stop responding. The server enforces the same rule - this
+       only saves somebody assembling five picks and being refused at the end.
+       An unknown kickoff counts as not started, which is what the server does. */
+    const started = gameStarted(g);
+    if (started) card.classList.add('started');
+    card.innerHTML=`<div class="hdr"><span>${g.away} @ ${g.home}</span><span class="pill">${started?'Started':g.league}</span></div><div class="meta">${when}${started?' &middot; too late to pick':''}</div><div class="markets"></div>`;
+    const m=card.querySelector('.markets');
+
+    // SPREAD
+    if (g.spread){
+      const favSide = g.spread.fav; // 'home' | 'away'
+      const favTeam = favSide==='home' ? g.home : g.away;
+      const dogTeam = favSide==='home' ? g.away : g.home;
+      const magRaw  = Number(g.spread.line);
+      const mag     = Number.isFinite(magRaw) ? Math.abs(magRaw) : null;
+      const favLine = mag==null? null : -mag;
+      const dogLine = mag==null? null :  mag;
+      const favPrice= g.spread.favPrice ?? (favSide==='home' ? g.spread.homePrice : g.spread.awayPrice);
+      const dogPrice= g.spread.dogPrice ?? (favSide==='home' ? g.spread.awayPrice : g.spread.homePrice);
+      const fmt = n => (n==null?'':(n>0?`+${n}`:`${n}`));
+
+      m.appendChild(marketChip(g,'spread','favorite',favTeam,{line:favLine,price:favPrice}, `Favorite • ${favTeam} ${fmt(favLine)} (${favPrice??''})`));
+      m.appendChild(marketChip(g,'spread','underdog',dogTeam,{line:dogLine,price:dogPrice}, `Underdog • ${dogTeam} ${fmt(dogLine)} (${dogPrice??''})`));
+    }
+
+    // TOTALS
+    if (g.totals){
+      m.appendChild(marketChip(g,'total','over','Over',{total:g.totals.total,price:g.totals.overPrice},   `Over • ${g.totals.total} (${g.totals.overPrice??''})`));
+      m.appendChild(marketChip(g,'total','under','Under',{total:g.totals.total,price:g.totals.underPrice},`Under • ${g.totals.total} (${g.totals.underPrice??''})`));
+    }
+
+    // MONEYLINE
+    if (g.moneyline){
+      m.appendChild(marketChip(g,'moneyline','ml', g.away,{price:g.moneyline.away}, `ML • ${g.away} (${g.moneyline.away??''})`));
+      m.appendChild(marketChip(g,'moneyline','ml', g.home,{price:g.moneyline.home}, `ML • ${g.home} (${g.moneyline.home??''})`));
+    }
+
+    root.appendChild(card);
+  }
+  if(!list.length){ root.innerHTML='<div class="hint">No games in this Wed–Tue window.</div>'; }
+}
+
+/* Kickoff in the past. An absent or unparseable kickoff is NOT started - the
+   forgiving side, and the same call the server makes. */
+function gameStarted(game){
+  const iso = game && (game.kickoff || game.commence_time);
+  if (!iso) return false;
+  const t = new Date(iso).getTime();
+  return isFinite(t) && t <= Date.now();
+}
+
+function marketChip(game,market,kind,selection,meta,label){
+  const d=document.createElement('button'); d.className='chip'; d.dataset.key=chipKey(game,market,kind,selection);
+  d.textContent=label;
+  if (gameStarted(game)) { d.disabled = true; d.title = 'This game has already started'; }
+  else d.addEventListener('click',()=>addPick(game,market,kind,selection,meta));
+  return d;
+}
+function chipKey(game,market,kind,selection){ return `${game.id}|${market}|${kind}|${selection}`; }
+function updateChipSelection(){
+  const pickKeys=new Set(state.picks.map(p=>`${p.gameId}|${p.market}|${p.kind}|${p.selection}`));
+  els('.chip').forEach(c=> c.classList.toggle('selected', pickKeys.has(c.dataset.key)));
+}
+
+/* =================== PICK MGMT + RULES =================== */
+function renderPicks(){
+  const root=document.getElementById('picksList'); 
+  if(!state.picks.length){ root.innerHTML=''; return; }
+  root.innerHTML = state.picks.map(p=>`
+    <div class="pickList">
+      <div><strong>${p.league}</strong> — ${p.matchup}</div>
+      <div>${p.market.toUpperCase()}</div>
+      <div>${p.kind.toUpperCase()}</div>
+      <div class="hint">${p.odds??''}</div>
+    </div>`).join('');
+}
+
+function validateRules(){
+  const nonML = state.picks.filter(p=>p.market!=='moneyline');
+  const ml    = state.picks.filter(p=>p.market==='moneyline');
+
+  const nfl = nonML.filter(p=>p.league==='NFL').length;
+  const cfb = nonML.filter(p=>p.league==='NCAAF').length;
+  const over  = nonML.filter(p=>p.kind==='over').length;
+  const under = nonML.filter(p=>p.kind==='under').length;
+  const fav   = nonML.filter(p=>p.kind==='favorite').length;
+  const dog   = nonML.filter(p=>p.kind==='underdog').length;
+
+  el('#ruleNFL').textContent = `NFL: ${nfl}/2`;
+  el('#ruleCFB').textContent = `CFB: ${cfb}/2`;
+  el('#ruleOU').textContent  = `O/U: ${over} Over / ${under} Under`;
+  el('#ruleFD').textContent  = `Fav/Dog: ${fav} Fav / ${dog} Dog`;
+
+  let mlOk = (ml.length===1);
+  let mlMsg = 'ML: '+ml.length+'/1 (odds > -200)';
+  if (ml.length===1){
+    const odds = Number(ml[0].odds);
+    mlOk = Number.isFinite(odds) && odds > -200;
+    if(!mlOk) mlMsg += ' — invalid odds';
+  }
+  el('#ruleML').textContent = mlMsg;
+
+  const rulesOK = (nfl===2 && cfb===2 && over===1 && under===1 && fav===1 && dog===1 && mlOk);
+
+  const hasEmail=(el('#emailInput').value||'').trim().length>0;
+  el('#btnSubmit').disabled=!(rulesOK && hasEmail);
+
+  const msg = rulesOK ? 'Ready to submit.' : 'Selections must satisfy all constraints (incl. 1 ML > -200).';
+  const cls = rulesOK ? 'alert ok' : 'alert err';
+  const rm  = el('#ruleMsg'); rm.textContent=msg; rm.className='status '+cls;
+}
+
+function addPick(game,market,kind,selection,meta){
+  const email=(state.email||el('#emailInput').value.trim())||'';
+  const name =(state.name ||el('#nameInput').value.trim())||'';
+  if(email && !state.email){ state.name=name; state.email=email; updateUserBadge(); }
+
+  const pick = {
+    id:rid(),
+    week: isoDate(state.weekStart),
+    email: email||'',
+    user: name||email||'',
+    league:game.league,
+    gameId:game.id,
+    matchup:`${game.away} @ ${game.home}`,
+    market, kind, selection, meta,
+    odds: meta.price ?? null,
+    status:'pending',
+    ts:Date.now()
+  };
+
+  // Toggle logic
+  const key = `${pick.week}|${pick.gameId}|${market}|${kind}|${selection}`;
+  const idx = state.picks.findIndex(p=> `${p.week}|${p.gameId}|${p.market}|${p.kind}|${p.selection}`===key);
+  if (idx>=0){
+    state.picks.splice(idx,1);
+  } else {
+    if (market==='moneyline'){
+      const curML = state.picks.findIndex(p=>p.market==='moneyline');
+      if (curML>=0) state.picks.splice(curML,1);
+    }
+    state.picks.push(pick);
+    if (state.picks.length>5) state.picks.shift();
+  }
+
+  updateChipSelection(); renderPicks(); validateRules();
+}
+
+/* =================== SUBMIT / LOAD / BOARD =================== */
+async function submitPicks(){
+  const name=(el('#nameInput').value||'').trim();
+  const email=(el('#emailInput').value||'').trim();
+  if(!email){ alert('Enter your email at the top first.'); return; }
+
+  const btn=el('#btnSubmit'); btn.disabled = true;
+  const s=el('#submitStatus'); s.textContent='Submitting…'; s.className='status alert';
+
+  try{
+    const res = await fetch(
+      CONFIG.API + '?fn=submit&email=' + encodeURIComponent(email) + '&user=' + encodeURIComponent(name||email),
+      { method:'POST', body: JSON.stringify({ email, user: name||email, picks: state.picks, allowReplace:false }) }
+    );
+    const text = await res.text();
+    let j=null; try{ j=JSON.parse(text); }catch(_){
+      s.textContent='Network/parse error. Response: '+text.slice(0,200); s.className='status alert err';
+      btn.disabled=false; return;
+    }
+    if(j.ok){
+      s.textContent='Picks submitted successfully.'; s.className='status alert ok';
+      state.picks=[]; renderPicks(); validateRules(); loadMyPicks();
+    }else{
+      s.textContent='Error: '+(j.error||'unknown'); s.className='status alert err'; btn.disabled=false;
+    }
+  }catch(e){
+    s.textContent='Fetch failed: '+e.message; s.className='status alert err'; btn.disabled=false;
+  }
+}
+
+async function loadMyPicks(){
+  const email=(el('#emailInput').value||'').trim(); 
+  if(!email) return;
+  const r=await fetch(apiUrl('mine', { email: email }));
+  const j=await r.json();
+  const tbody=el('#myPicksTable tbody'); tbody.innerHTML='';
+  (j.picks||[]).forEach(p=>{
+    let lineVal = (p && p.line !== undefined && p.line !== null && p.line !== '') ? p.line : '—';
+    if ((lineVal === '—' || lineVal === null) && p && p.meta){
+      let meta = p.meta; if (typeof meta === 'string') { try{ meta=JSON.parse(meta); }catch(_){ meta=null; } }
+      if (p.market === 'spread' && meta && meta.line !== undefined)      lineVal = meta.line;
+      else if (p.market === 'total' && meta && meta.total !== undefined) lineVal = meta.total;
+    }
+    if (p.market === 'spread' && lineVal !== '—' && !isNaN(Number(lineVal))){
+      const n=Number(lineVal); lineVal = (n>0?'+':'') + n;
+    }
+    const tr=document.createElement('tr');
+    tr.appendChild(cell(p.week,      'Week'));
+    tr.appendChild(cell(p.league,    'Sport'));
+    tr.appendChild(cell(p.matchup,   'Matchup'));
+    tr.appendChild(cell(p.market,    'Market'));
+    tr.appendChild(cell(p.selection, 'Selection'));
+    tr.appendChild(cell(lineVal,     'Line'));
+    tr.appendChild(cell(p.odds ?? '', 'Odds'));
+    tr.appendChild(cell(p.status,    'Status', { 'data-id': p.id }));
+    tbody.appendChild(tr);
+  });
+  function cell(text,label,attrs={}){ const td=document.createElement('td'); td.textContent=(text==null?'':text); td.setAttribute('data-label',label); Object.entries(attrs).forEach(([k,v])=>td.setAttribute(k,v)); return td; }
+}
+
+/* Season table: weeks won leads, record and win pct behind it. */
+async function buildBoard(){
+  const r=await fetch(apiUrl('board')); const j=await r.json();
+  const tbody=el('#boardTable tbody'); tbody.innerHTML='';
+  const rows=j.rows||[];
+  if(!rows.length){
+    tbody.innerHTML='<tr><td colspan="6" class="hint">No graded picks yet.</td></tr>';
+  } else {
+    /* The trophy marks the champion, which is most weeks won - not whoever
+       happens to sit on the top row. The table sorts on total wins, and the
+       two need not be the same person: a season can be led on raw wins by
+       somebody who kept finishing second on the night. */
+    const mostWeeks = rows.reduce((m,r)=>Math.max(m, r.weeksWon||0), 0);
+
+    rows.forEach((row,i)=>{
+      const tr=document.createElement('tr');
+      // .644 rather than 0.644 — the leading zero is noise in a standings table
+      const pct=(row.pct||0).toFixed(3).replace(/^0/,'');
+      const trophy = (mostWeeks>0 && row.weeksWon===mostWeeks) ? ' 🏆' : '';
+      tr.innerHTML=`
+        <td>${row.user}${trophy}</td>
+        <td><strong>${row.weeksWon}</strong></td>
+        <td>${row.wins}</td><td>${row.losses}</td><td>${row.pushes}</td>
+        <td>${pct}</td>`;
+      tbody.appendChild(tr);
+    });
+  }
+  await buildWeekPicker();
+}
+
+/* Week dropdown, newest first, flagged with who took each one. */
+async function buildWeekPicker(){
+  const sel=el('#weekPicker'); if(!sel) return;
+  const r=await fetch(apiUrl('weeks')); const j=await r.json();
+  const weeks=j.weeks||[];
+  const keep=sel.value;
+  sel.innerHTML=weeks.map(w=>{
+    const tag = w.decided
+      ? (w.winners.length>1 ? ' — tie: '+w.winners.join(', ') : ' — '+w.winners[0])
+      : ' — in progress';
+    return `<option value="${w.week}">${w.week}${tag}</option>`;
+  }).join('');
+  if(!weeks.length){ el('#weekTable tbody').innerHTML=''; el('#weekStatus').textContent=''; return; }
+  sel.value = weeks.some(w=>w.week===keep) ? keep : weeks[0].week;
+  await buildWeek(sel.value);
+}
+
+async function buildWeek(week){
+  if(!week) return;
+  const r=await fetch(apiUrl('week', { week: week }));
+  const j=await r.json();
+  const tbody=el('#weekTable tbody'); tbody.innerHTML='';
+  (j.rows||[]).forEach(row=>{
+    const tr=document.createElement('tr');
+    if(row.winner) tr.style.fontWeight='700';
+    tr.innerHTML=`
+      <td>${row.user}${row.winner?' 🏆':''}</td>
+      <td>${row.wins}</td><td>${row.losses}</td><td>${row.pushes}</td>
+      <td>${row.pending||''}</td>`;
+    tbody.appendChild(tr);
+  });
+  const s=el('#weekStatus');
+  if(!j.rows || !j.rows.length){ s.textContent='No picks this week.'; s.className='status alert'; }
+  else if(j.decided){
+    s.textContent = j.winners.length>1
+      ? 'Tied: '+j.winners.join(', ')
+      : 'Winner: '+j.winners[0];
+    s.className='status alert ok';
+  } else {
+    s.textContent='Still grading — some picks are pending.';
+    s.className='status alert';
+  }
+}
+
+/* =================== USER BADGE + TABS =================== */
+function updateUserBadge(){
+  const n=(el('#nameInput').value||'').trim(), e=(el('#emailInput').value||'').trim();
+  if(e){ el('#userBadge').textContent=n||e; el('#userBadge').classList.remove('hidden'); el('#btnLogout').classList.remove('hidden'); }
+  try{ localStorage.setItem('pg_name', n); localStorage.setItem('pg_email', e); }catch(_){}
+  validateRules();
+}
+function show(tab){
+  els('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===tab));
+  els('.view').forEach(v=> v.id===`view-${tab}`?v.classList.remove('hidden'):v.classList.add('hidden'));
+}
+
+/* =================== INIT =================== */
+document.addEventListener('DOMContentLoaded', ()=>{
+  try{ const sn=localStorage.getItem('pg_name')||''; const se=localStorage.getItem('pg_email')||''; if(sn) el('#nameInput').value=sn; if(se) el('#emailInput').value=se; }catch(_){}
+  updateUserBadge();
+
+  el('#nameInput').addEventListener('input', updateUserBadge);
+  el('#emailInput').addEventListener('input', updateUserBadge);
+  el('#btnLogout').addEventListener('click', ()=>{ state.name=null; state.email=null; try{localStorage.removeItem('pg_name');localStorage.removeItem('pg_email');}catch(_){}});
+
+  els('.tab').forEach(t=> t.addEventListener('click', ()=> {
+    const tab = t.dataset.tab;
+    show(tab);
+    if (tab === 'mine')    loadMyPicks();
+    if (tab === 'board')   buildBoard();
+    if (tab === 'queries') buildQueries();
+  }));
+
+  /* The season governs every tab, so changing it invalidates the cached stats
+     and re-runs whatever is on screen. */
+  el('#seasonPicker').addEventListener('change', e=>{
+    SEASON.current = e.target.value;
+    Q.data = null; Q.season = null;
+    refreshSeasonViews();
+  });
+  el('#qPlayer').addEventListener('change', renderQuery);
+  el('#qView').addEventListener('change', renderQuery);
+
+  el('#btnPrevWeek').addEventListener('click', ()=>{ state.weekStart = addDays(state.weekStart,-7); filterByWeek(); });
+  el('#btnNextWeek').addEventListener('click', ()=>{ state.weekStart = addDays(state.weekStart, 7); filterByWeek(); });
+  el('#btnThisWeek').addEventListener('click', ()=>{ state.weekStart = startOfWedWeek(new Date()); filterByWeek(); });
+
+  el('#sportFilter').addEventListener('change', filterByWeek);
+  el('#btnRefresh').addEventListener('click', fetchOdds);
+  el('#btnSubmit').addEventListener('click', submitPicks);
+  el('#btnRefreshBoard').addEventListener('click', buildBoard);
+  el('#weekPicker').addEventListener('change', e=> buildWeek(e.target.value));
+
+  updateWeekLabel();
+
+  if (!apiConfigured()) {
+    el('#games').innerHTML =
+      '<div class="hint"><strong>Backend not configured.</strong><br>' +
+      'This build went out without an Apps Script URL. Set the ' +
+      '<code>APPS_SCRIPT_URL</code> environment variable in Netlify and redeploy, ' +
+      'or for local use run <code>localStorage.setItem(\'pg_api\',\'https://…/exec\')</code> ' +
+      'in the console and reload.</div>';
+    el('#btnSubmit').disabled = true;
+    return;
+  }
+
+  fetchOdds();
+  /* Seasons first: the board should open already scoped rather than
+     flashing every season and then correcting itself. */
+  loadSeasons().then(buildBoard);
+  if((el('#emailInput').value||'').trim()) loadMyPicks();
+});
+</script>
+</body>
+</html>

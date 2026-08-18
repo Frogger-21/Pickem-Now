@@ -1,0 +1,35 @@
+# Auto-deploy: Netlify builds on every push to main.
+#
+# There's no bundler here — the "build" is one substitution that puts the
+# Apps Script URL into index.html from the APPS_SCRIPT_URL environment
+# variable, so the URL never has to live in this public repo.
+
+[build]
+  publish = "Deploy Front End HTML"
+  command = "bash tools/inject-config.sh"
+
+# Deploy previews and branch builds get the same treatment, so a preview is
+# actually usable rather than pointing at nothing.
+[context.deploy-preview]
+  command = "bash tools/inject-config.sh"
+
+[context.branch-deploy]
+  command = "bash tools/inject-config.sh"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+# The page is one file that changes with every deploy, so don't let a browser
+# hold onto a stale copy. The trophy image can cache hard.
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/*.webp"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"

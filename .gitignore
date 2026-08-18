@@ -18,3 +18,7 @@ Thumbs.db
 desktop.ini
 .vscode/
 .idea/
+
+# Design handoff archives - the extracted project is what matters
+Design/**/*.zip
+Design/**/uploads/*.png

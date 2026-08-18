@@ -1,0 +1,1803 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  body { margin:0; background:oklch(0.22 0.006 60); font-family:'Barlow',system-ui,sans-serif; -webkit-font-smoothing:antialiased; }
+  a { color:oklch(0.80 0.16 75); text-decoration:none; }
+  a:hover { color:oklch(0.88 0.13 75); }
+  *::-webkit-scrollbar { width:0; height:0; }
+</style>
+</helmet>
+
+<section style="padding:56px 64px 40px; display:flex; flex-direction:column; gap:40px">
+
+  <div style="display:flex; flex-direction:column; gap:10px; max-width:900px">
+    <div style="font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.18em; color:oklch(0.80 0.16 75); text-transform:uppercase">Turn 6 · Reconciled with the contract</div>
+    <div style="font-size:38px; font-weight:700; color:oklch(0.97 0.004 60); letter-spacing:-0.02em; line-height:1.1">What changed, and what to hand over</div>
+    <div style="font-size:16px; color:oklch(0.70 0.006 60); line-height:1.5; text-wrap:pretty; max-width:640px">The frames in turns 1–5 are updated in place rather than redrawn, so there is one current version of each screen. Everything below is the mapping Claude Code needs: which element ids each drawn region corresponds to, and the three places the earlier drawings were wrong about the backend.</div>
+  </div>
+
+  <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(380px, 1fr)); gap:18px; max-width:1560px">
+
+    <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.80 0.16 75 / 0.4); border-radius:10px; padding:16px 17px; display:flex; flex-direction:column; gap:7px">
+      <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.14em; color:oklch(0.80 0.16 75)">CORRECTED</div>
+      <div style="font-size:15px; font-weight:700; color:oklch(0.96 0.004 60)">32 · Kickoff lock, not a slate deadline</div>
+      <div style="font-size:13px; color:oklch(0.74 0.006 60); line-height:1.55; text-wrap:pretty">Every picks screen now says each game locks at its own kickoff. The Thursday night game in <a href="#1a">1a</a> and <a href="#5a">5a</a> carries a KICKED OFF badge, sits at 55% opacity and its six cells no longer respond — that is <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">.game.started</span> with disabled chips. Use <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">gameStarted(game)</span> and let a missing kickoff fail open. The old "Picks locked" screen is gone; submitting now confirms and stays editable.</div>
+    </div>
+
+    <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.80 0.16 75 / 0.4); border-radius:10px; padding:16px 17px; display:flex; flex-direction:column; gap:7px">
+      <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.14em; color:oklch(0.80 0.16 75)">CORRECTED</div>
+      <div style="font-size:15px; font-weight:700; color:oklch(0.96 0.004 60)">33 · Queries is qView, not a query builder</div>
+      <div style="font-size:13px; color:oklch(0.74 0.006 60); line-height:1.55; text-wrap:pretty">Four dropdowns became three controls: VIEW (<span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">qView</span>), PLAYER (<span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">qPlayer</span>) and SEASON (<span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">seasonPicker</span>). The eight view options are exactly the eight the render code switches on, labelled in plain words: Win % by player, Win % by market, Units by market, NFL vs college, Win % by week, Cumulative units, Best teams, Worst teams. Chart type follows the view — week views draw the line, everything else the bars — so <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">drawBars()</span> keeps its job.</div>
+    </div>
+
+    <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.80 0.16 75 / 0.4); border-radius:10px; padding:16px 17px; display:flex; flex-direction:column; gap:7px">
+      <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.14em; color:oklch(0.80 0.16 75)">CORRECTED</div>
+      <div style="font-size:15px; font-weight:700; color:oklch(0.96 0.004 60)">34 · There is no login</div>
+      <div style="font-size:13px; color:oklch(0.74 0.006 60); line-height:1.55; text-wrap:pretty">The name and email fields are the identity, so they belong on the page, not behind an avatar. <a href="#1a">1a</a> puts <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">nameInput</span> and <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">emailInput</span> as a two-up row under the header; the circle beside the season chip is <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">userBadge</span> and holds <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">btnLogout</span> on tap. Do not design a sign-in flow around a field the backend simply trusts.</div>
+    </div>
+
+    <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:16px 17px; display:flex; flex-direction:column; gap:7px">
+      <div style="font-size:15px; font-weight:700; color:oklch(0.96 0.004 60)">35 · Make Picks id map</div>
+      <div style="font-size:13px; color:oklch(0.74 0.006 60); line-height:1.6; text-wrap:pretty">Week arrows are <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">btnPrevWeek</span> / <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">btnNextWeek</span>, the date is <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">weekLabel</span> and tapping it is <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">btnThisWeek</span>. League chips are <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">sportFilter</span> — a select in the contract, a three-chip row in the design, which is a free change if the JS reads its value. The odds grid is <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">games</span>, each cell a <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">.chip</span> / <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">.chip.selected</span>. The bottom slot bar is <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">picksList</span>.</div>
+    </div>
+
+    <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:16px 17px; display:flex; flex-direction:column; gap:7px">
+      <div style="font-size:15px; font-weight:700; color:oklch(0.96 0.004 60)">36 · The rule counters still exist</div>
+      <div style="font-size:13px; color:oklch(0.74 0.006 60); line-height:1.6; text-wrap:pretty">The five slots are a visual form of the counters, not a replacement: keep <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">ruleFD</span> and <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">ruleOU</span> as the FAV / DOG / OVER / UNDER slots, <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">ruleML</span> as the ML slot (its "invalid odds" state is what dims short prices), <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">ruleNFL</span> and <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">ruleCFB</span> as the league tally line, and <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">ruleMsg</span> as the submit button's label. Same six elements, same text, arranged as slots.</div>
+    </div>
+
+    <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:16px 17px; display:flex; flex-direction:column; gap:7px">
+      <div style="font-size:15px; font-weight:700; color:oklch(0.96 0.004 60)">37 · Both slips stay real tables</div>
+      <div style="font-size:13px; color:oklch(0.74 0.006 60); line-height:1.6; text-wrap:pretty"><a href="#1b">1b</a> and <a href="#5b">5b</a> are drawn as cards and rows, but build them as <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">myPicksTable</span> and <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">boardTable</span> with their <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">data-label</span> cells intact — the phone layout is that same table with the existing card CSS, and the desktop layout is the table shown as a table. That is what keeps this a restyle. The week dropdown in 5c is <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">weekPicker</span> feeding <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">weekTable</span>.</div>
+    </div>
+
+    <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:16px 17px; display:flex; flex-direction:column; gap:7px">
+      <div style="font-size:15px; font-weight:700; color:oklch(0.96 0.004 60)">38 · Say when it last graded</div>
+      <div style="font-size:13px; color:oklch(0.74 0.006 60); line-height:1.6; text-wrap:pretty">Grading runs every six hours, so a result can be that stale and the page never admits it. GRADED 3H AGO now sits under the Queries controls; put the same line on Scoreboard and My Picks, derived from the newest graded <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">ts</span> in the payload. When the season selector is off the newest season, <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">.seasonBar.stale</span> gets an amber outline.</div>
+    </div>
+
+    <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:16px 17px; display:flex; flex-direction:column; gap:7px">
+      <div style="font-size:15px; font-weight:700; color:oklch(0.96 0.004 60)">39 · Nothing here needs a new endpoint</div>
+      <div style="font-size:13px; color:oklch(0.74 0.006 60); line-height:1.6; text-wrap:pretty">One exception: the team records beside each team in the odds grid (8-4, 6-6) are not in the feed. Drop them and the layout is unaffected — do not build a records endpoint for a decoration. Live scores in the slip are the same story: the LIVE state is fine on graded data alone, showing PENDING until a result lands, and no polling. Everything else reads <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">odds</span>, <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">mine</span>, <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">board</span>, <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">weeks</span>, <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">week</span>, <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">stats</span> and <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">seasons</span>.</div>
+    </div>
+
+    <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:16px 17px; display:flex; flex-direction:column; gap:7px">
+      <div style="font-size:15px; font-weight:700; color:oklch(0.96 0.004 60)">40 · No destructive controls</div>
+      <div style="font-size:13px; color:oklch(0.74 0.006 60); line-height:1.6; text-wrap:pretty">Deliberately absent: clear all, delete week, empty submit. Tapping a filled slot removes that one pick locally and the submit button disables itself — there is no path that posts fewer than five picks, and no path that changes a started game. Queries needs a real empty state too: name the view and the season and say no picks were graded there yet, not "Nothing to show".</div>
+    </div>
+
+  </div>
+</section>
+
+<section style="padding:16px 64px 40px; display:flex; flex-direction:column; gap:40px">
+
+  <div style="display:flex; flex-direction:column; gap:10px; max-width:900px">
+    <div style="font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.18em; color:oklch(0.80 0.16 75); text-transform:uppercase">Turn 5 · The rest on desktop</div>
+    <div style="font-size:38px; font-weight:700; color:oklch(0.97 0.004 60); letter-spacing:-0.02em; line-height:1.1">Four more pages at 1320px</div>
+    <div style="font-size:16px; color:oklch(0.70 0.006 60); line-height:1.5; text-wrap:pretty; max-width:640px">Same rule as <a href="#4a">4a</a>: the phone layout rearranged above 900px, content left and a 330–360px rail right. <a href="#5a">5a</a> is clickable and shares state with <a href="#1a">1a</a>. These are drawn against the frontend contract — season selector in the header on every page, the trophy on most weeks won rather than on row one, and picks replaceable until the first game grades.</div>
+  </div>
+
+  <div style="display:flex; gap:56px; align-items:flex-start; flex-wrap:wrap">
+
+    <div id="5a" style="display:flex; flex-direction:column; gap:14px">
+      <div style="display:flex; align-items:center; gap:10px">
+        <div style="font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:700; color:oklch(0.18 0.008 60); background:oklch(0.80 0.16 75); padding:3px 8px; border-radius:5px">5a</div>
+        <div style="font-size:15px; font-weight:600; color:oklch(0.95 0.004 60)">Make Picks · desktop, interactive</div>
+      </div>
+      <div style="width:1320px; height:820px; border-radius:12px; overflow:hidden; border:1px solid oklch(0.30 0.008 60); box-shadow:0 30px 70px -20px rgba(0,0,0,0.75); display:flex; flex-direction:column">
+        <div style="flex:0 0 auto; height:36px; background:oklch(0.24 0.008 60); display:flex; align-items:center; gap:9px; padding:0 14px">
+          <div style="width:11px; height:11px; border-radius:50%; background:oklch(0.63 0.18 25)"></div>
+          <div style="width:11px; height:11px; border-radius:50%; background:oklch(0.80 0.16 75)"></div>
+          <div style="width:11px; height:11px; border-radius:50%; background:oklch(0.72 0.15 150)"></div>
+          <div style="flex:1; display:flex; justify-content:center">
+            <div style="padding:4px 16px; border-radius:6px; background:oklch(0.18 0.008 60); font-family:'JetBrains Mono',monospace; font-size:11px; color:oklch(0.70 0.006 60)">quinton4mvp.com</div>
+          </div>
+          <div style="width:60px"></div>
+        </div>
+        <div style="flex:1 1 auto; background:oklch(0.145 0.006 60); display:flex; flex-direction:column; min-height:0; font-family:'Barlow',sans-serif">
+
+          <div style="flex:0 0 auto; height:58px; padding:0 26px; display:flex; align-items:center; gap:26px; border-bottom:1px solid oklch(0.26 0.008 60)">
+            <div style="font-family:'JetBrains Mono',monospace; font-size:12px; letter-spacing:0.16em; color:oklch(0.80 0.16 75); font-weight:700">PICKS GAME</div>
+            <div style="display:flex; gap:20px; align-items:center">
+              <div style="font-size:14px; font-weight:700; color:oklch(0.80 0.16 75); border-bottom:2px solid oklch(0.80 0.16 75); padding-bottom:3px">Make Picks</div>
+              <div style="font-size:14px; font-weight:500; color:oklch(0.70 0.006 60)">{{ slipTab }}</div>
+              <div style="font-size:14px; font-weight:500; color:oklch(0.70 0.006 60)">Scoreboard</div>
+              <div style="font-size:14px; font-weight:500; color:oklch(0.70 0.006 60)">Queries</div>
+              <div style="font-size:14px; font-weight:500; color:oklch(0.70 0.006 60)">Hall of Fame</div>
+            </div>
+            <div style="flex:1"></div>
+            <div style="display:flex; align-items:center; gap:9px; height:32px; padding:0 11px; border-radius:8px; border:1px solid oklch(0.30 0.008 60)">
+              <div style="font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.12em; color:oklch(0.58 0.006 60)">SEASON</div>
+              <div style="font-size:13px; font-weight:600; color:oklch(0.94 0.004 60)">2025-26</div>
+              <div style="font-size:10px; color:oklch(0.62 0.006 60)">▾</div>
+            </div>
+            <div style="width:28px; height:28px; border-radius:50%; background:oklch(0.30 0.008 60); color:oklch(0.90 0.004 60); font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center">RB</div>
+          </div>
+
+          <div style="flex:1 1 auto; display:grid; grid-template-columns:1fr 360px; min-height:0">
+
+            <div style="display:flex; flex-direction:column; min-width:0; min-height:0">
+              <div style="flex:0 0 auto; padding:14px 24px; display:flex; align-items:center; gap:12px; border-bottom:1px solid oklch(0.26 0.008 60)">
+                <div style="display:flex; align-items:baseline; gap:9px">
+                  <div style="font-size:19px; font-weight:700; color:oklch(0.97 0.004 60); letter-spacing:-0.015em">Week of Dec 3</div>
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:10px; color:oklch(0.62 0.006 60)">WED KEY 2025-12-03</div>
+                </div>
+                <div style="display:flex; gap:5px">
+                  <sc-for list="{{ sportTabs }}" as="t" hint-placeholder-count="3">
+                    <div onClick="{{ t.on }}" style="padding:5px 13px; border-radius:20px; font-size:12.5px; font-weight:600; cursor:pointer; border:1px solid oklch(0.30 0.008 60); background:{{ t.bg }}; color:{{ t.fg }}">{{ t.label }}</div>
+                  </sc-for>
+                </div>
+                <div style="flex:1; display:flex; align-items:center; gap:8px; height:34px; padding:0 11px; border-radius:9px; background:oklch(0.21 0.008 60); border:1px solid oklch(0.30 0.008 60); max-width:240px">
+                  <div style="width:11px; height:11px; border-radius:50%; border:1.5px solid oklch(0.62 0.006 60)"></div>
+                  <input type="text" placeholder="Search team" value="{{ q }}" onChange="{{ onQuery }}" style="flex:1; min-width:0; background:transparent; border:0; outline:0; color:oklch(0.96 0.004 60); font-family:'Barlow',sans-serif; font-size:13px" />
+                </div>
+                <div onClick="{{ onSort }}" style="height:34px; padding:0 12px; display:flex; align-items:center; border-radius:9px; background:oklch(0.21 0.008 60); border:1px solid oklch(0.30 0.008 60); cursor:pointer; font-family:'JetBrains Mono',monospace; font-size:10px; color:oklch(0.84 0.006 60); white-space:nowrap">{{ sortLabel }}</div>
+              </div>
+
+              <div style="flex:0 0 auto; display:grid; grid-template-columns:92px 1fr 128px 128px 128px; gap:10px; padding:7px 24px; border-bottom:1px solid oklch(0.26 0.008 60)">
+                <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.12em; color:oklch(0.58 0.006 60)">KICKOFF</div>
+                <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.12em; color:oklch(0.58 0.006 60)">TEAM</div>
+                <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.12em; color:oklch(0.58 0.006 60); text-align:center">SPREAD</div>
+                <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.12em; color:oklch(0.58 0.006 60); text-align:center">TOTAL</div>
+                <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.12em; color:oklch(0.58 0.006 60); text-align:center">MONEYLINE</div>
+              </div>
+
+              <div style="flex:1 1 auto; overflow-y:auto; min-height:0">
+                <sc-for list="{{ games }}" as="g" hint-placeholder-count="8">
+                  <div style="display:grid; grid-template-columns:92px 1fr 128px 128px 128px; gap:10px; padding:11px 24px; border-bottom:1px solid oklch(0.24 0.008 60); align-items:center; opacity:{{ g.rowOp }}">
+                    <div style="display:flex; flex-direction:column; gap:5px; align-items:flex-start">
+                      <div style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.88 0.004 60)">{{ g.time }}</div>
+                      <div style="font-family:'JetBrains Mono',monospace; font-size:9px; font-weight:700; letter-spacing:0.06em; color:{{ g.tagFg }}; background:{{ g.tagBg }}; padding:2px 5px; border-radius:4px">{{ g.league }}</div>
+                      <div style="font-family:'JetBrains Mono',monospace; font-size:8.5px; font-weight:700; letter-spacing:0.08em; color:oklch(0.70 0.006 60); border:1px solid oklch(0.36 0.008 60); padding:2px 4px; border-radius:4px; display:{{ g.lockShow }}">KICKED OFF</div>
+                    </div>
+                    <div style="display:flex; flex-direction:column; gap:6px; min-width:0">
+                      <sc-for list="{{ g.rows }}" as="r" hint-placeholder-count="2">
+                        <div style="height:40px; display:flex; align-items:center; gap:9px; min-width:0">
+                          <div style="font-family:'JetBrains Mono',monospace; font-size:11.5px; font-weight:700; color:oklch(0.70 0.006 60); width:42px; flex:0 0 42px">{{ r.abbr }}</div>
+                          <div style="font-size:14.5px; font-weight:600; color:oklch(0.95 0.004 60); white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ r.name }}</div>
+                          <div style="font-family:'JetBrains Mono',monospace; font-size:11px; color:oklch(0.56 0.006 60); flex:0 0 auto">{{ r.rec }}</div>
+                        </div>
+                      </sc-for>
+                    </div>
+                    <div style="display:flex; flex-direction:column; gap:6px">
+                      <sc-for list="{{ g.rows }}" as="r" hint-placeholder-count="2">
+                        <div onClick="{{ r.spread.on }}" style="height:40px; border-radius:8px; display:flex; align-items:center; justify-content:center; gap:7px; cursor:pointer; border:1px solid {{ r.spread.bd }}; background:{{ r.spread.bg }}; opacity:{{ r.spread.op }}">
+                          <div style="font-size:14px; font-weight:600; color:{{ r.spread.fg }}">{{ r.spread.main }}</div>
+                          <div style="font-family:'JetBrains Mono',monospace; font-size:10.5px; color:{{ r.spread.sub }}">{{ r.spread.odds }}</div>
+                        </div>
+                      </sc-for>
+                    </div>
+                    <div style="display:flex; flex-direction:column; gap:6px">
+                      <sc-for list="{{ g.rows }}" as="r" hint-placeholder-count="2">
+                        <div onClick="{{ r.total.on }}" style="height:40px; border-radius:8px; display:flex; align-items:center; justify-content:center; gap:7px; cursor:pointer; border:1px solid {{ r.total.bd }}; background:{{ r.total.bg }}; opacity:{{ r.total.op }}">
+                          <div style="font-size:14px; font-weight:600; color:{{ r.total.fg }}">{{ r.total.main }}</div>
+                          <div style="font-family:'JetBrains Mono',monospace; font-size:10.5px; color:{{ r.total.sub }}">{{ r.total.odds }}</div>
+                        </div>
+                      </sc-for>
+                    </div>
+                    <div style="display:flex; flex-direction:column; gap:6px">
+                      <sc-for list="{{ g.rows }}" as="r" hint-placeholder-count="2">
+                        <div onClick="{{ r.ml.on }}" style="height:40px; border-radius:8px; display:flex; align-items:center; justify-content:center; gap:7px; cursor:pointer; border:1px solid {{ r.ml.bd }}; background:{{ r.ml.bg }}; opacity:{{ r.ml.op }}">
+                          <div style="font-size:14px; font-weight:600; color:{{ r.ml.fg }}">{{ r.ml.main }}</div>
+                          <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; color:{{ r.ml.sub }}">{{ r.ml.odds }}</div>
+                        </div>
+                      </sc-for>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+
+            <div style="border-left:1px solid oklch(0.26 0.008 60); background:oklch(0.175 0.006 60); padding:18px 20px; display:flex; flex-direction:column; gap:12px; min-height:0">
+              <div style="display:flex; align-items:baseline; justify-content:space-between">
+                <div style="font-size:17px; font-weight:700; color:oklch(0.97 0.004 60)">Your slip</div>
+                <div style="font-family:'JetBrains Mono',monospace; font-size:11px; color:oklch(0.62 0.006 60)">{{ countLabel }}</div>
+              </div>
+              <div style="display:flex; flex-direction:column; gap:7px">
+                <sc-for list="{{ slots }}" as="s" hint-placeholder-count="5">
+                  <div onClick="{{ s.on }}" style="height:54px; border-radius:9px; border:1px dashed {{ s.bd }}; background:{{ s.bg }}; display:grid; grid-template-columns:62px 1fr auto; align-items:center; gap:10px; padding:0 13px; cursor:pointer">
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.1em; color:{{ s.roleFg }}">{{ s.role }}</div>
+                    <div style="font-size:15px; font-weight:700; color:{{ s.fg }}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ s.pick }}</div>
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:11.5px; color:{{ s.subFg }}">{{ s.sub }}</div>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 13px; border-radius:9px; background:oklch(0.21 0.008 60)">
+                <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.1em; color:oklch(0.62 0.006 60)">LEAGUE BALANCE</div>
+                <div style="font-family:'JetBrains Mono',monospace; font-size:11.5px; font-weight:700; color:{{ tallyFg }}">{{ tally }}</div>
+              </div>
+              <div onClick="{{ onSubmit }}" style="height:46px; border-radius:10px; display:flex; align-items:center; justify-content:center; cursor:pointer; background:{{ submitBg }}; color:{{ submitFg }}; font-size:15px; font-weight:700">{{ submitLabel }}</div>
+              <div style="font-size:12px; color:oklch(0.62 0.006 60); line-height:1.5; text-align:center">Change any pick until its own game kicks off.</div>
+              <div style="flex:1"></div>
+              <div style="border-top:1px solid oklch(0.28 0.008 60); padding-top:12px; display:flex; flex-direction:column; gap:5px">
+                <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.12em; color:oklch(0.58 0.006 60)">THE RULES</div>
+                <div style="font-size:12.5px; color:oklch(0.70 0.006 60); line-height:1.55; text-wrap:pretty">Five picks: two NFL, two college, one moneyline from either league priced better than -200. Among the four spread and total picks, one favorite, one underdog, one over, one under.</div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="5b" style="display:flex; flex-direction:column; gap:14px">
+      <div style="display:flex; align-items:center; gap:10px">
+        <div style="font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:700; color:oklch(0.18 0.008 60); background:oklch(0.80 0.16 75); padding:3px 8px; border-radius:5px">5b</div>
+        <div style="font-size:15px; font-weight:600; color:oklch(0.95 0.004 60)">{{ slipTab }} · desktop</div>
+      </div>
+      <div style="width:1320px; height:820px; border-radius:12px; overflow:hidden; border:1px solid oklch(0.30 0.008 60); box-shadow:0 30px 70px -20px rgba(0,0,0,0.75); display:flex; flex-direction:column">
+        <div style="flex:0 0 auto; height:36px; background:oklch(0.24 0.008 60); display:flex; align-items:center; gap:9px; padding:0 14px">
+          <div style="width:11px; height:11px; border-radius:50%; background:oklch(0.63 0.18 25)"></div>
+          <div style="width:11px; height:11px; border-radius:50%; background:oklch(0.80 0.16 75)"></div>
+          <div style="width:11px; height:11px; border-radius:50%; background:oklch(0.72 0.15 150)"></div>
+          <div style="flex:1"></div>
+        </div>
+        <div style="flex:1 1 auto; background:oklch(0.145 0.006 60); display:flex; flex-direction:column; min-height:0; font-family:'Barlow',sans-serif">
+          <div style="flex:0 0 auto; height:58px; padding:0 26px; display:flex; align-items:center; gap:26px; border-bottom:1px solid oklch(0.26 0.008 60)">
+            <div style="font-family:'JetBrains Mono',monospace; font-size:12px; letter-spacing:0.16em; color:oklch(0.80 0.16 75); font-weight:700">PICKS GAME</div>
+            <div style="display:flex; gap:20px; align-items:center">
+              <div style="font-size:14px; font-weight:500; color:oklch(0.70 0.006 60)">Make Picks</div>
+              <div style="font-size:14px; font-weight:700; color:oklch(0.80 0.16 75); border-bottom:2px solid oklch(0.80 0.16 75); padding-bottom:3px">{{ slipTab }}</div>
+              <div style="font-size:14px; font-weight:500; color:oklch(0.70 0.006 60)">Scoreboard</div>
+              <div style="font-size:14px; font-weight:500; color:oklch(0.70 0.006 60)">Queries</div>
+              <div style="font-size:14px; font-weight:500; color:oklch(0.70 0.006 60)">Hall of Fame</div>
+            </div>
+            <div style="flex:1"></div>
+            <div style="display:flex; align-items:center; gap:9px; height:32px; padding:0 11px; border-radius:8px; border:1px solid oklch(0.30 0.008 60)">
+              <div style="font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.12em; color:oklch(0.58 0.006 60)">SEASON</div>
+              <div style="font-size:13px; font-weight:600; color:oklch(0.94 0.004 60)">2025-26</div>
+              <div style="font-size:10px; color:oklch(0.62 0.006 60)">▾</div>
+            </div>
+            <div style="width:28px; height:28px; border-radius:50%; background:oklch(0.30 0.008 60); color:oklch(0.90 0.004 60); font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center">RB</div>
+          </div>
+
+          <div style="flex:1 1 auto; display:grid; grid-template-columns:300px 1fr; min-height:0">
+            <div style="border-right:1px solid oklch(0.26 0.008 60); background:oklch(0.165 0.006 60); padding:20px; display:flex; flex-direction:column; gap:10px; overflow-y:auto">
+              <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.14em; color:oklch(0.58 0.006 60)">WEEKS</div>
+              <div style="border:1px solid oklch(0.80 0.16 75 / 0.5); background:oklch(0.80 0.16 75 / 0.08); border-radius:10px; padding:12px 13px; display:flex; align-items:center; justify-content:space-between">
+                <div style="display:flex; flex-direction:column; gap:2px">
+                  <div style="font-size:14px; font-weight:700; color:oklch(0.96 0.004 60)">Week of Dec 3</div>
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; color:oklch(0.80 0.16 75)">IN PROGRESS</div>
+                </div>
+                <div style="font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:700; color:oklch(0.80 0.16 75)">2-1</div>
+              </div>
+              <sc-for list="{{ history }}" as="h" hint-placeholder-count="3">
+                <div style="border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:12px 13px; display:flex; align-items:center; justify-content:space-between">
+                  <div style="display:flex; flex-direction:column; gap:2px">
+                    <div style="font-size:14px; font-weight:600; color:oklch(0.93 0.004 60)">{{ h.week }}</div>
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; color:oklch(0.58 0.006 60)">{{ h.note }}</div>
+                  </div>
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:700; color:{{ h.fg }}">{{ h.rec }}</div>
+                </div>
+              </sc-for>
+            </div>
+
+            <div style="padding:24px 30px; display:flex; flex-direction:column; gap:18px; min-height:0; overflow-y:auto">
+              <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:20px">
+                <div style="display:flex; flex-direction:column; gap:4px">
+                  <div style="font-size:27px; font-weight:700; color:oklch(0.97 0.004 60); letter-spacing:-0.02em; line-height:1.1">Week of Dec 3</div>
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:10.5px; letter-spacing:0.08em; color:oklch(0.62 0.006 60)">SUBMITTED THU 6:42P · 5 PICKS · EACH EDITABLE UNTIL ITS KICKOFF</div>
+                </div>
+                <div style="display:flex; align-items:baseline; gap:4px">
+                  <div style="font-size:34px; font-weight:700; color:oklch(0.72 0.15 150); letter-spacing:-0.02em">2</div>
+                  <div style="font-size:22px; font-weight:600; color:oklch(0.55 0.006 60)">–</div>
+                  <div style="font-size:34px; font-weight:700; color:oklch(0.63 0.18 25); letter-spacing:-0.02em">1</div>
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:10.5px; color:oklch(0.62 0.006 60); margin-left:8px">1 LIVE · 1 PENDING</div>
+                </div>
+              </div>
+
+              <div style="border:1px solid oklch(0.30 0.008 60); border-radius:12px; overflow:hidden; background:oklch(0.175 0.006 60)">
+                <div style="display:grid; grid-template-columns:5px 92px 150px 1fr 120px 90px 96px; align-items:center; gap:12px; padding:9px 16px 9px 0; border-bottom:1px solid oklch(0.30 0.008 60); background:oklch(0.20 0.008 60)">
+                  <div></div>
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.12em; color:oklch(0.58 0.006 60)">ROLE</div>
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.12em; color:oklch(0.58 0.006 60)">SELECTION</div>
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.12em; color:oklch(0.58 0.006 60)">MATCHUP</div>
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.12em; color:oklch(0.58 0.006 60)">LINE</div>
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.12em; color:oklch(0.58 0.006 60); text-align:right">ODDS</div>
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.12em; color:oklch(0.58 0.006 60); text-align:right">STATUS</div>
+                </div>
+                <sc-for list="{{ slip }}" as="p" hint-placeholder-count="5">
+                  <div style="display:grid; grid-template-columns:5px 92px 150px 1fr 120px 90px 96px; align-items:center; gap:12px; padding:13px 16px 13px 0; border-bottom:1px solid oklch(0.24 0.008 60)">
+                    <div style="align-self:stretch; background:{{ p.bar }}"></div>
+                    <div style="display:flex; flex-direction:column; gap:2px">
+                      <div style="font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.1em; color:oklch(0.80 0.16 75)">{{ p.role }}</div>
+                      <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; color:oklch(0.58 0.006 60)">{{ p.league }}</div>
+                    </div>
+                    <div style="font-size:15px; font-weight:700; color:oklch(0.96 0.004 60); letter-spacing:-0.01em">{{ p.sel }}</div>
+                    <div style="font-size:13.5px; color:oklch(0.68 0.006 60); white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ p.game }}</div>
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:12.5px; color:oklch(0.80 0.006 60)">{{ p.line }}</div>
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:13px; color:oklch(0.90 0.004 60); text-align:right">{{ p.odds }}</div>
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:10.5px; font-weight:700; letter-spacing:0.06em; text-align:right; color:{{ p.bar }}">{{ p.status }}</div>
+                  </div>
+                </sc-for>
+                <div style="padding:12px 16px; display:flex; align-items:center; justify-content:space-between">
+                  <div style="font-size:12.5px; color:oklch(0.62 0.006 60)">Lines shown are the prices stored when each pick was made.</div>
+                  <div style="display:flex; gap:8px">
+                    <div style="padding:8px 14px; border-radius:8px; border:1px solid oklch(0.32 0.008 60); font-size:12.5px; font-weight:600; color:oklch(0.88 0.006 60)">Copy for chat</div>
+                    <div style="padding:8px 14px; border-radius:8px; border:1px solid oklch(0.80 0.16 75); color:oklch(0.80 0.16 75); font-size:12.5px; font-weight:600">Replace picks</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="5c" style="display:flex; flex-direction:column; gap:14px">
+      <div style="display:flex; align-items:center; gap:10px">
+        <div style="font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:700; color:oklch(0.18 0.008 60); background:oklch(0.80 0.16 75); padding:3px 8px; border-radius:5px">5c</div>
+        <div style="font-size:15px; font-weight:600; color:oklch(0.95 0.004 60)">Scoreboard · desktop</div>
+      </div>
+      <div style="width:1320px; height:820px; border-radius:12px; overflow:hidden; border:1px solid oklch(0.30 0.008 60); box-shadow:0 30px 70px -20px rgba(0,0,0,0.75); display:flex; flex-direction:column">
+        <div style="flex:0 0 auto; height:36px; background:oklch(0.24 0.008 60); display:flex; align-items:center; gap:9px; padding:0 14px">
+          <div style="width:11px; height:11px; border-radius:50%; background:oklch(0.63 0.18 25)"></div>
+          <div style="width:11px; height:11px; border-radius:50%; background:oklch(0.80 0.16 75)"></div>
+          <div style="width:11px; height:11px; border-radius:50%; background:oklch(0.72 0.15 150)"></div>
+          <div style="flex:1"></div>
+        </div>
+        <div style="flex:1 1 auto; background:oklch(0.145 0.006 60); display:flex; flex-direction:column; min-height:0; font-family:'Barlow',sans-serif">
+          <div style="flex:0 0 auto; height:58px; padding:0 26px; display:flex; align-items:center; gap:26px; border-bottom:1px solid oklch(0.26 0.008 60)">
+            <div style="font-family:'JetBrains Mono',monospace; font-size:12px; letter-spacing:0.16em; color:oklch(0.80 0.16 75); font-weight:700">PICKS GAME</div>
+            <div style="display:flex; gap:20px; align-items:center">
+              <div style="font-size:14px; font-weight:500; color:oklch(0.70 0.006 60)">Make Picks</div>
+              <div style="font-size:14px; font-weight:500; color:oklch(0.70 0.006 60)">{{ slipTab }}</div>
+              <div style="font-size:14px; font-weight:700; color:oklch(0.80 0.16 75); border-bottom:2px solid oklch(0.80 0.16 75); padding-bottom:3px">Scoreboard</div>
+              <div style="font-size:14px; font-weight:500; color:oklch(0.70 0.006 60)">Queries</div>
+              <div style="font-size:14px; font-weight:500; color:oklch(0.70 0.006 60)">Hall of Fame</div>
+            </div>
+            <div style="flex:1"></div>
+            <div style="display:flex; align-items:center; gap:9px; height:32px; padding:0 11px; border-radius:8px; border:1px solid oklch(0.30 0.008 60)">
+              <div style="font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.12em; color:oklch(0.58 0.006 60)">SEASON</div>
+              <div style="font-size:13px; font-weight:600; color:oklch(0.94 0.004 60)">2025-26</div>
+              <div style="font-size:10px; color:oklch(0.62 0.006 60)">▾</div>
+            </div>
+            <div style="width:28px; height:28px; border-radius:50%; background:oklch(0.30 0.008 60); color:oklch(0.90 0.004 60); font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center">RB</div>
+          </div>
+
+          <div style="flex:1 1 auto; display:grid; grid-template-columns:1fr 340px; min-height:0">
+            <div style="padding:24px 28px; display:flex; flex-direction:column; gap:16px; min-height:0">
+              <div style="display:flex; align-items:baseline; justify-content:space-between">
+                <div style="font-size:27px; font-weight:700; color:oklch(0.97 0.004 60); letter-spacing:-0.02em">Season standings</div>
+                <div style="font-family:'JetBrains Mono',monospace; font-size:10.5px; color:oklch(0.62 0.006 60)">SORTED BY WINS · 14 WEEKS PLAYED</div>
+              </div>
+              <div style="border:1px solid oklch(0.28 0.008 60); border-radius:12px; overflow:hidden; background:oklch(0.175 0.006 60)">
+                <div style="display:grid; grid-template-columns:34px 1fr 84px 56px 56px 46px 62px 76px; gap:10px; align-items:center; padding:10px 16px; background:oklch(0.20 0.008 60); border-bottom:1px solid oklch(0.30 0.008 60)">
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.1em; color:oklch(0.58 0.006 60)">#</div>
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.1em; color:oklch(0.58 0.006 60)">PLAYER</div>
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.1em; color:oklch(0.58 0.006 60); text-align:right">WEEKS WON</div>
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.1em; color:oklch(0.58 0.006 60); text-align:right">W</div>
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.1em; color:oklch(0.58 0.006 60); text-align:right">L</div>
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.1em; color:oklch(0.58 0.006 60); text-align:right">P</div>
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.1em; color:oklch(0.58 0.006 60); text-align:right">PEND</div>
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.1em; color:oklch(0.58 0.006 60); text-align:right">PCT</div>
+                </div>
+                <sc-for list="{{ seasonRows }}" as="r" hint-placeholder-count="9">
+                  <div style="display:grid; grid-template-columns:34px 1fr 84px 56px 56px 46px 62px 76px; gap:10px; align-items:center; padding:12px 16px; border-bottom:1px solid oklch(0.23 0.008 60); background:{{ r.rowBg }}">
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:700; color:{{ r.rankFg }}">{{ r.rank }}</div>
+                    <div style="display:flex; flex-direction:column; gap:4px; min-width:0">
+                      <div style="display:flex; align-items:center; gap:7px">
+                        <div style="font-size:15px; font-weight:600; color:oklch(0.96 0.004 60)">{{ r.name }}</div>
+                        <img src="https://quinton4mvp.com/trophy-gold-transparent-background-19.webp" alt="Most weeks won" style="width:18px; height:18px; object-fit:contain; display:{{ r.trophyShow }}" />
+                      </div>
+                      <div style="height:3px; border-radius:2px; background:oklch(0.27 0.008 60); overflow:hidden; max-width:280px">
+                        <div style="height:3px; border-radius:2px; background:{{ r.barFg }}; width:{{ r.barW }}"></div>
+                      </div>
+                    </div>
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:700; text-align:right; color:{{ r.wkFg }}">{{ r.wk }}</div>
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:14px; text-align:right; color:oklch(0.93 0.004 60)">{{ r.w }}</div>
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:14px; text-align:right; color:oklch(0.70 0.006 60)">{{ r.l }}</div>
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:14px; text-align:right; color:oklch(0.58 0.006 60)">{{ r.p }}</div>
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:14px; text-align:right; color:oklch(0.58 0.006 60)">{{ r.pend }}</div>
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:700; text-align:right; color:{{ r.pctFg }}">{{ r.pct }}</div>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="display:flex; align-items:center; gap:10px">
+                <img src="https://quinton4mvp.com/trophy-gold-transparent-background-19.webp" alt="Trophy" style="width:16px; height:16px; object-fit:contain" />
+                <div style="font-size:12.5px; color:oklch(0.64 0.006 60)">Trophy marks the most weeks won, which is not always the top row. Pct counts decided picks only.</div>
+              </div>
+            </div>
+
+            <div style="border-left:1px solid oklch(0.26 0.008 60); background:oklch(0.165 0.006 60); padding:24px 22px; display:flex; flex-direction:column; gap:14px; min-height:0; overflow-y:auto">
+              <div style="display:flex; align-items:baseline; justify-content:space-between">
+                <div style="font-size:17px; font-weight:700; color:oklch(0.96 0.004 60)">This week</div>
+                <div style="font-family:'JetBrains Mono',monospace; font-size:10px; color:oklch(0.80 0.16 75)">UNDECIDED</div>
+              </div>
+              <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.12em; color:oklch(0.58 0.006 60)">WEEK OF DEC 3</div>
+              <div style="display:flex; flex-direction:column">
+                <sc-for list="{{ weekRows }}" as="r" hint-placeholder-count="9">
+                  <div style="display:grid; grid-template-columns:22px 1fr auto auto; gap:10px; align-items:center; padding:10px 8px; border-bottom:1px solid oklch(0.24 0.008 60); background:{{ r.rowBg }}; border-radius:6px">
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:700; color:{{ r.rankFg }}">{{ r.rank }}</div>
+                    <div style="font-size:13.5px; font-weight:600; color:oklch(0.94 0.004 60); white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ r.name }}</div>
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; color:oklch(0.56 0.006 60)">{{ r.live }}</div>
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:13.5px; font-weight:700; color:{{ r.fg }}">{{ r.rec }}</div>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:13px 14px; display:flex; flex-direction:column; gap:6px">
+                <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.12em; color:oklch(0.80 0.16 75)">WEEK WINNER</div>
+                <div style="font-size:13px; color:oklch(0.80 0.006 60); line-height:1.5; text-wrap:pretty">Not awarded until every pick in the week is graded. Ties share the week, so this can list several names.</div>
+              </div>
+              <div style="flex:1"></div>
+              <div style="height:36px; border-radius:8px; border:1px solid oklch(0.32 0.008 60); display:flex; align-items:center; justify-content:center; font-size:12.5px; font-weight:600; color:oklch(0.88 0.006 60)">Browse past weeks</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="5d" style="display:flex; flex-direction:column; gap:14px">
+      <div style="display:flex; align-items:center; gap:10px">
+        <div style="font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:700; color:oklch(0.18 0.008 60); background:oklch(0.80 0.16 75); padding:3px 8px; border-radius:5px">5d</div>
+        <div style="font-size:15px; font-weight:600; color:oklch(0.95 0.004 60)">Hall of Fame · desktop</div>
+      </div>
+      <div style="width:1320px; height:820px; border-radius:12px; overflow:hidden; border:1px solid oklch(0.30 0.008 60); box-shadow:0 30px 70px -20px rgba(0,0,0,0.75); display:flex; flex-direction:column">
+        <div style="flex:0 0 auto; height:36px; background:oklch(0.24 0.008 60); display:flex; align-items:center; gap:9px; padding:0 14px">
+          <div style="width:11px; height:11px; border-radius:50%; background:oklch(0.63 0.18 25)"></div>
+          <div style="width:11px; height:11px; border-radius:50%; background:oklch(0.80 0.16 75)"></div>
+          <div style="width:11px; height:11px; border-radius:50%; background:oklch(0.72 0.15 150)"></div>
+          <div style="flex:1"></div>
+        </div>
+        <div style="flex:1 1 auto; background:oklch(0.145 0.006 60); display:flex; flex-direction:column; min-height:0; font-family:'Barlow',sans-serif">
+          <div style="flex:0 0 auto; height:58px; padding:0 26px; display:flex; align-items:center; gap:26px; border-bottom:1px solid oklch(0.26 0.008 60)">
+            <div style="font-family:'JetBrains Mono',monospace; font-size:12px; letter-spacing:0.16em; color:oklch(0.80 0.16 75); font-weight:700">PICKS GAME</div>
+            <div style="display:flex; gap:20px; align-items:center">
+              <div style="font-size:14px; font-weight:500; color:oklch(0.70 0.006 60)">Make Picks</div>
+              <div style="font-size:14px; font-weight:500; color:oklch(0.70 0.006 60)">{{ slipTab }}</div>
+              <div style="font-size:14px; font-weight:500; color:oklch(0.70 0.006 60)">Scoreboard</div>
+              <div style="font-size:14px; font-weight:500; color:oklch(0.70 0.006 60)">Queries</div>
+              <div style="font-size:14px; font-weight:700; color:oklch(0.80 0.16 75); border-bottom:2px solid oklch(0.80 0.16 75); padding-bottom:3px">Hall of Fame</div>
+            </div>
+            <div style="flex:1"></div>
+            <div style="width:28px; height:28px; border-radius:50%; background:oklch(0.30 0.008 60); color:oklch(0.90 0.004 60); font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center">RB</div>
+          </div>
+
+          <div style="flex:1 1 auto; padding:30px 34px; display:flex; flex-direction:column; gap:24px; min-height:0; overflow-y:auto">
+            <div style="border:1px solid oklch(0.80 0.16 75 / 0.45); border-radius:16px; background:oklch(0.80 0.16 75 / 0.07); padding:26px 32px; display:grid; grid-template-columns:auto 1fr auto; gap:30px; align-items:center">
+              <img src="https://quinton4mvp.com/trophy-gold-transparent-background-19.webp" alt="Trophy" style="width:132px; height:132px; object-fit:contain; display:block" />
+              <div style="display:flex; flex-direction:column; gap:6px">
+                <div style="font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.18em; color:oklch(0.80 0.16 75)">REIGNING CHAMPION</div>
+                <div style="font-size:44px; font-weight:700; color:oklch(0.97 0.004 60); letter-spacing:-0.025em; line-height:1.05">Whit Payne</div>
+                <div style="font-family:'JetBrains Mono',monospace; font-size:14px; letter-spacing:0.06em; color:oklch(0.80 0.16 75)">2025–2026</div>
+              </div>
+              <div style="display:flex; gap:26px">
+                <div style="display:flex; flex-direction:column; align-items:center; gap:3px">
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:24px; font-weight:700; color:oklch(0.95 0.004 60)">41-29</div>
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.1em; color:oklch(0.60 0.006 60)">RECORD</div>
+                </div>
+                <div style="width:1px; background:oklch(0.32 0.008 60)"></div>
+                <div style="display:flex; flex-direction:column; align-items:center; gap:3px">
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:24px; font-weight:700; color:oklch(0.95 0.004 60)">.586</div>
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.1em; color:oklch(0.60 0.006 60)">PCT</div>
+                </div>
+                <div style="width:1px; background:oklch(0.32 0.008 60)"></div>
+                <div style="display:flex; flex-direction:column; align-items:center; gap:3px">
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:24px; font-weight:700; color:oklch(0.95 0.004 60)">6</div>
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.1em; color:oklch(0.60 0.006 60)">WEEKS WON</div>
+                </div>
+              </div>
+            </div>
+
+            <div style="font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.14em; color:oklch(0.58 0.006 60)">PAST CHAMPIONS</div>
+            <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:20px">
+              <sc-for list="{{ champs }}" as="c" hint-placeholder-count="3">
+                <div style="border:1px solid oklch(0.28 0.008 60); border-radius:14px; background:oklch(0.175 0.006 60); padding:22px; display:flex; flex-direction:column; align-items:center; gap:10px; text-align:center">
+                  <img src="https://quinton4mvp.com/trophy-gold-transparent-background-19.webp" alt="Trophy" style="width:76px; height:76px; object-fit:contain; display:block" />
+                  <div style="font-size:22px; font-weight:700; color:oklch(0.96 0.004 60); letter-spacing:-0.015em">{{ c.name }}</div>
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:11.5px; letter-spacing:0.06em; color:oklch(0.80 0.16 75)">{{ c.year }}</div>
+                  <div style="display:flex; align-items:center; gap:12px; padding-top:10px; margin-top:4px; border-top:1px solid oklch(0.28 0.008 60); width:100%; justify-content:center">
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:700; color:oklch(0.93 0.004 60)">{{ c.pct }}</div>
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.62 0.006 60)">{{ c.rec }}</div>
+                  </div>
+                  <div style="font-size:13px; color:oklch(0.64 0.006 60); line-height:1.45">{{ c.note }}</div>
+                </div>
+              </sc-for>
+            </div>
+
+            <div style="border-top:1px solid oklch(0.24 0.008 60); padding-top:20px; display:flex; align-items:center; gap:18px; flex-wrap:wrap">
+              <div style="font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.14em; color:oklch(0.58 0.006 60)">TITLES BY PLAYER</div>
+              <sc-for list="{{ titles }}" as="t" hint-placeholder-count="4">
+                <div style="display:flex; align-items:center; gap:8px; padding:8px 14px; border-radius:20px; border:1px solid oklch(0.30 0.008 60); background:oklch(0.19 0.008 60)">
+                  <div style="font-size:13.5px; font-weight:600; color:oklch(0.94 0.004 60)">{{ t.name }}</div>
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:700; color:oklch(0.80 0.16 75)">×{{ t.n }}</div>
+                </div>
+              </sc-for>
+              <div style="font-size:13px; color:oklch(0.62 0.006 60)">Four seasons, four champions. Nobody has repeated.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="width:340px; display:flex; flex-direction:column; gap:16px; padding-top:44px">
+      <div style="font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.16em; color:oklch(0.80 0.16 75)">BUILD NOTES</div>
+      <div style="display:flex; flex-direction:column; gap:14px">
+        <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:14px 15px; display:flex; flex-direction:column; gap:6px">
+          <div style="font-size:14px; font-weight:700; color:oklch(0.96 0.004 60)">27 · Ship the system font stack</div>
+          <div style="font-size:13px; color:oklch(0.72 0.006 60); line-height:1.5; text-wrap:pretty">These mocks are drawn in Barlow and JetBrains Mono. Webfonts are allowed but render-blocking on cellular, and the typeface is not doing real work here — the numbers just need to be monospaced so columns align. Ship <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">-apple-system, "Segoe UI", Helvetica, sans-serif</span> and <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">ui-monospace, Menlo, Consolas, monospace</span>, and keep every size and weight as drawn.</div>
+        </div>
+        <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:14px 15px; display:flex; flex-direction:column; gap:6px">
+          <div style="font-size:14px; font-weight:700; color:oklch(0.96 0.004 60)">28 · Season selector on every page</div>
+          <div style="font-size:13px; color:oklch(0.72 0.006 60); line-height:1.5; text-wrap:pretty">Top right of the header on all pages, since it governs every tab. When it isn't the newest season, give the control an amber outline and the page a one-line banner — otherwise people hunt for this week's missing games. Hall of Fame doesn't need it; it spans all seasons.</div>
+        </div>
+        <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:14px 15px; display:flex; flex-direction:column; gap:6px">
+          <div style="font-size:14px; font-weight:700; color:oklch(0.96 0.004 60)">29 · Two marks on the standings</div>
+          <div style="font-size:13px; color:oklch(0.72 0.006 60); line-height:1.5; text-wrap:pretty">Rows sort by wins, so the amber tint marks first place and the trophy separately marks everyone equal to max(weeksWon) — in 5c that is the same person, but they can differ, and the design has to survive that. Desktop restores the columns the phone drops: weeks won, pushes, pending.</div>
+        </div>
+        <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:14px 15px; display:flex; flex-direction:column; gap:6px">
+          <div style="font-size:14px; font-weight:700; color:oklch(0.96 0.004 60)">30 · Replace, don't lock</div>
+          <div style="font-size:13px; color:oklch(0.72 0.006 60); line-height:1.5; text-wrap:pretty">The backend replaces a week's picks until one grades, so 5a and 5b say that plainly and 5b offers Replace picks. If you'd rather it truly lock at submit, that's a backend change too — pick one behavior and make both sides agree.</div>
+        </div>
+        <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:14px 15px; display:flex; flex-direction:column; gap:6px">
+          <div style="font-size:14px; font-weight:700; color:oklch(0.96 0.004 60)">31 · Queries matches fn=stats exactly</div>
+          <div style="font-size:13px; color:oklch(0.72 0.006 60); line-height:1.5; text-wrap:pretty">The eight VIEW options are the eight <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">qView</span> values, nothing invented: markets, units, leagues, weeks, cum, teamsW, teamsL, players. Every one is served by a single <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">fn=stats</span> response, so switching views costs no request. Unit views draw against a signed zero baseline with negatives in red — see note 15.</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<section style="padding:16px 64px 40px; display:flex; flex-direction:column; gap:40px">
+
+  <div style="display:flex; flex-direction:column; gap:10px; max-width:900px">
+    <div style="font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.18em; color:oklch(0.80 0.16 75); text-transform:uppercase">Turn 4 · Queries on desktop</div>
+    <div style="font-size:38px; font-weight:700; color:oklch(0.97 0.004 60); letter-spacing:-0.02em; line-height:1.1">Same query, room to breathe</div>
+    <div style="font-size:16px; color:oklch(0.70 0.006 60); line-height:1.5; text-wrap:pretty; max-width:640px"><a href="#4a">4a</a> is the desktop Queries page, and it runs on the same state as <a href="#2a">2a</a> — change a dropdown in either and both redraw. That is the whole point: one component, one data path, a different arrangement above 900px. Bars turn vertical because there is room for names under columns, and the ranked table beside the chart gives the exact numbers.</div>
+  </div>
+
+  <div id="4a" style="display:flex; gap:28px; align-items:flex-start; flex-wrap:wrap">
+    <div style="display:flex; flex-direction:column; gap:14px">
+      <div style="display:flex; align-items:center; gap:10px">
+        <div style="font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:700; color:oklch(0.18 0.008 60); background:oklch(0.80 0.16 75); padding:3px 8px; border-radius:5px">4a</div>
+        <div style="font-size:15px; font-weight:600; color:oklch(0.95 0.004 60)">Queries · desktop, interactive</div>
+      </div>
+      <div style="width:1320px; height:800px; border-radius:12px; overflow:hidden; border:1px solid oklch(0.30 0.008 60); box-shadow:0 30px 70px -20px rgba(0,0,0,0.75); display:flex; flex-direction:column">
+        <div style="flex:0 0 auto; height:38px; background:oklch(0.24 0.008 60); display:flex; align-items:center; gap:9px; padding:0 14px; border-bottom:1px solid oklch(0.30 0.008 60)">
+          <div style="width:11px; height:11px; border-radius:50%; background:oklch(0.63 0.18 25)"></div>
+          <div style="width:11px; height:11px; border-radius:50%; background:oklch(0.80 0.16 75)"></div>
+          <div style="width:11px; height:11px; border-radius:50%; background:oklch(0.72 0.15 150)"></div>
+          <div style="flex:1; display:flex; justify-content:center">
+            <div style="padding:4px 16px; border-radius:6px; background:oklch(0.18 0.008 60); font-family:'JetBrains Mono',monospace; font-size:11px; color:oklch(0.70 0.006 60)">quinton4mvp.com/queries</div>
+          </div>
+          <div style="width:60px"></div>
+        </div>
+
+        <div style="flex:1 1 auto; background:oklch(0.145 0.006 60); display:flex; flex-direction:column; min-height:0">
+
+          <div style="flex:0 0 auto; height:58px; padding:0 26px; display:flex; align-items:center; gap:28px; border-bottom:1px solid oklch(0.26 0.008 60)">
+            <div style="font-family:'JetBrains Mono',monospace; font-size:12px; letter-spacing:0.16em; color:oklch(0.80 0.16 75); font-weight:700">PICKS GAME</div>
+            <div style="display:flex; gap:22px; align-items:center">
+              <div style="font-size:14px; font-weight:500; color:oklch(0.70 0.006 60)">Make Picks</div>
+              <div style="font-size:14px; font-weight:500; color:oklch(0.70 0.006 60)">{{ slipTab }}</div>
+              <div style="font-size:14px; font-weight:500; color:oklch(0.70 0.006 60)">Scoreboard</div>
+              <div style="font-size:14px; font-weight:700; color:oklch(0.80 0.16 75); border-bottom:2px solid oklch(0.80 0.16 75); padding-bottom:3px">Queries</div>
+              <div style="font-size:14px; font-weight:500; color:oklch(0.70 0.006 60)">Hall of Fame</div>
+            </div>
+            <div style="flex:1"></div>
+            <div style="font-size:13px; color:oklch(0.66 0.006 60)">Reid Basu</div>
+            <div style="width:28px; height:28px; border-radius:50%; background:oklch(0.30 0.008 60); color:oklch(0.90 0.004 60); font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center">RB</div>
+          </div>
+
+          <div style="flex:0 0 auto; padding:16px 26px; background:oklch(0.175 0.006 60); border-bottom:1px solid oklch(0.26 0.008 60); display:flex; align-items:flex-end; gap:12px">
+            <div style="display:flex; flex-direction:column; gap:5px; width:240px">
+              <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.12em; color:oklch(0.58 0.006 60)">VIEW</div>
+              <select value="{{ qView }}" onChange="{{ onView }}" style="height:38px; padding:0 11px; border-radius:8px; background:oklch(0.235 0.008 60); border:1px solid oklch(0.32 0.008 60); color:oklch(0.96 0.004 60); font-family:'Barlow',sans-serif; font-size:14px; font-weight:600; appearance:none; -webkit-appearance:none">
+                <sc-for list="{{ views }}" as="v" hint-placeholder-count="8"><option value="{{ v.v }}">{{ v.label }}</option></sc-for>
+              </select>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:5px; width:178px">
+              <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.12em; color:oklch(0.58 0.006 60)">PLAYER</div>
+              <select value="{{ qWho }}" onChange="{{ onWho }}" style="height:38px; padding:0 11px; border-radius:8px; background:oklch(0.235 0.008 60); border:1px solid oklch(0.32 0.008 60); color:oklch(0.96 0.004 60); font-family:'Barlow',sans-serif; font-size:14px; font-weight:600; appearance:none; -webkit-appearance:none">
+                <sc-for list="{{ whoList }}" as="w" hint-placeholder-count="10"><option value="{{ w }}">{{ w }}</option></sc-for>
+              </select>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:5px; width:158px">
+              <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.12em; color:oklch(0.58 0.006 60)">SEASON</div>
+              <select value="{{ qRange }}" onChange="{{ onRange }}" style="height:38px; padding:0 11px; border-radius:8px; background:oklch(0.235 0.008 60); border:1px solid oklch(0.32 0.008 60); color:oklch(0.96 0.004 60); font-family:'Barlow',sans-serif; font-size:14px; font-weight:600; appearance:none; -webkit-appearance:none">
+                <sc-for list="{{ ranges }}" as="r" hint-placeholder-count="3"><option value="{{ r }}">{{ r }}</option></sc-for>
+              </select>
+            </div>
+            <div style="height:38px; display:flex; align-items:center; font-family:'JetBrains Mono',monospace; font-size:10.5px; color:oklch(0.56 0.006 60)">GRADED 3H AGO</div>
+            <div style="flex:1"></div>
+            <div style="display:flex; align-items:center; gap:8px">
+              <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.12em; color:oklch(0.58 0.006 60)">SAVED</div>
+              <div style="padding:8px 12px; border-radius:20px; border:1px solid oklch(0.30 0.008 60); font-size:12.5px; color:oklch(0.86 0.006 60)">Best ML picker</div>
+              <div style="padding:8px 12px; border-radius:20px; border:1px solid oklch(0.30 0.008 60); font-size:12.5px; color:oklch(0.86 0.006 60)">Who fades favorites</div>
+              <div style="padding:8px 12px; border-radius:20px; border:1px solid oklch(0.30 0.008 60); font-size:12.5px; color:oklch(0.86 0.006 60)">Season trend</div>
+            </div>
+          </div>
+
+          <div style="flex:1 1 auto; display:grid; grid-template-columns:1fr 330px; min-height:0">
+
+            <div style="padding:24px 26px; display:flex; flex-direction:column; gap:20px; min-width:0">
+              <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:20px">
+                <div style="display:flex; flex-direction:column; gap:4px">
+                  <div style="font-size:28px; font-weight:700; color:oklch(0.97 0.004 60); letter-spacing:-0.02em; line-height:1.1">{{ bigTitle }}</div>
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.08em; color:oklch(0.62 0.006 60)">{{ readout }}</div>
+                </div>
+                <div style="font-size:13px; color:oklch(0.64 0.006 60); text-align:right; max-width:280px; line-height:1.45">{{ caption }}</div>
+              </div>
+
+              <sc-if value="{{ isLine }}" hint-placeholder-val="{{ false }}">
+                <div style="flex:1; border:1px solid oklch(0.28 0.008 60); border-radius:12px; background:oklch(0.175 0.006 60); padding:20px 18px; display:flex; align-items:center; min-height:0">
+                  <svg viewBox="0 0 {{ chartW }} {{ chartH }}" width="100%" style="display:block">
+                    <sc-for list="{{ grid }}" as="g" hint-placeholder-count="7">
+                      <line x1="{{ axisX }}" x2="{{ chartW }}" y1="{{ g.y }}" y2="{{ g.y }}" stroke="oklch(0.32 0.008 60)" stroke-width="0.8" stroke-dasharray="3 5"></line>
+                    </sc-for>
+                    <sc-for list="{{ grid }}" as="g" hint-placeholder-count="7">
+                      <text x="6" y="{{ g.y }}" dy="3" fill="oklch(0.62 0.006 60)" font-family="JetBrains Mono, monospace" font-size="10">{{ g.label }}</text>
+                    </sc-for>
+                    <path d="{{ linePath }}" fill="none" stroke="oklch(0.80 0.16 75)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></path>
+                    <sc-for list="{{ pts }}" as="p" hint-placeholder-count="8">
+                      <circle cx="{{ p.cx }}" cy="{{ p.cy }}" r="3.5" fill="oklch(0.175 0.006 60)" stroke="oklch(0.80 0.16 75)" stroke-width="2"></circle>
+                    </sc-for>
+                    <sc-for list="{{ pts }}" as="p" hint-placeholder-count="8">
+                      <text x="{{ p.cx }}" y="{{ p.cy }}" dy="-9" text-anchor="middle" fill="oklch(0.90 0.004 60)" font-family="JetBrains Mono, monospace" font-size="10">{{ p.val }}</text>
+                    </sc-for>
+                    <sc-for list="{{ pts }}" as="p" hint-placeholder-count="8">
+                      <text x="{{ p.cx }}" y="{{ axisY }}" dy="15" text-anchor="middle" fill="oklch(0.62 0.006 60)" font-family="JetBrains Mono, monospace" font-size="10">{{ p.label }}</text>
+                    </sc-for>
+                  </svg>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ isBars }}" hint-placeholder-val="{{ true }}">
+                <div style="flex:1; border:1px solid oklch(0.28 0.008 60); border-radius:12px; background:oklch(0.175 0.006 60); padding:20px 22px 16px; display:flex; flex-direction:column; min-height:0">
+                  <div style="flex:1; display:flex; align-items:flex-end; gap:14px; min-height:0">
+                    <sc-for list="{{ bars }}" as="b" hint-placeholder-count="9">
+                      <div style="flex:1; min-width:0; height:100%; display:flex; flex-direction:column">
+                        <div style="flex:0 0 22px; font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:700; text-align:center; color:{{ b.valFg }}">{{ b.val }}</div>
+                        <div style="flex:1; min-height:0; position:relative">
+                          <div style="position:absolute; left:0; right:0; top:50%; height:1px; background:oklch(0.52 0.006 60); display:{{ zeroLine }}"></div>
+                          <div style="position:absolute; left:0; right:0; bottom:{{ b.vBottom }}; top:{{ b.vTop }}; height:{{ b.vH }}; border-radius:4px 4px 0 0; background:{{ b.fg }}; min-height:3px"></div>
+                        </div>
+                      </div>
+                    </sc-for>
+                  </div>
+                  <div style="flex:0 0 auto; display:flex; gap:14px; padding-top:10px; border-top:1px solid oklch(0.30 0.008 60); margin-top:10px">
+                    <sc-for list="{{ bars }}" as="b" hint-placeholder-count="9">
+                      <div style="flex:1; min-width:0; font-size:12.5px; font-weight:600; text-align:center; color:oklch(0.88 0.004 60); line-height:1.25; text-wrap:balance">{{ b.label }}</div>
+                    </sc-for>
+                  </div>
+                </div>
+              </sc-if>
+            </div>
+
+            <div style="border-left:1px solid oklch(0.26 0.008 60); background:oklch(0.165 0.006 60); padding:24px 22px; display:flex; flex-direction:column; gap:14px; min-height:0; overflow-y:auto">
+              <div style="font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.14em; color:oklch(0.58 0.006 60)">RANKED</div>
+              <div style="display:flex; flex-direction:column">
+                <sc-for list="{{ ranked }}" as="r" hint-placeholder-count="9">
+                  <div style="display:grid; grid-template-columns:22px 1fr auto; gap:10px; align-items:center; padding:10px 0; border-bottom:1px solid oklch(0.24 0.008 60)">
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:700; color:{{ r.rankFg }}">{{ r.rank }}</div>
+                    <div style="font-size:13.5px; font-weight:600; color:oklch(0.94 0.004 60); white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ r.label }}</div>
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:700; color:{{ r.valFg }}">{{ r.val }}</div>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:13px 14px; display:flex; flex-direction:column; gap:6px">
+                <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.12em; color:oklch(0.80 0.16 75)">TAKEAWAY</div>
+                <div style="font-size:13px; color:oklch(0.80 0.006 60); line-height:1.5; text-wrap:pretty">{{ takeaway }}</div>
+              </div>
+              <div style="flex:1"></div>
+              <div style="display:flex; gap:8px">
+                <div style="flex:1; height:36px; border-radius:8px; border:1px solid oklch(0.32 0.008 60); display:flex; align-items:center; justify-content:center; font-size:12.5px; font-weight:600; color:oklch(0.88 0.006 60)">Save query</div>
+                <div style="flex:1; height:36px; border-radius:8px; border:1px solid oklch(0.32 0.008 60); display:flex; align-items:center; justify-content:center; font-size:12.5px; font-weight:600; color:oklch(0.88 0.006 60)">Copy image</div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="width:330px; display:flex; flex-direction:column; gap:16px; padding-top:44px">
+      <div style="font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.16em; color:oklch(0.80 0.16 75)">BUILD NOTES</div>
+      <div style="display:flex; flex-direction:column; gap:14px">
+        <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:14px 15px; display:flex; flex-direction:column; gap:6px">
+          <div style="font-size:14px; font-weight:700; color:oklch(0.96 0.004 60)">23 · One breakpoint at 900px</div>
+          <div style="font-size:13px; color:oklch(0.72 0.006 60); line-height:1.5; text-wrap:pretty">Above 900px: the tab row becomes a horizontal nav, the three controls become one row, and the body becomes <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">grid-template-columns:1fr 330px</span> — chart left, ranked table right. Same components, same query state, no second page and no duplicated data logic. Below 900px it collapses to <a href="#2a">2a</a> exactly as drawn.</div>
+        </div>
+        <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:14px 15px; display:flex; flex-direction:column; gap:6px">
+          <div style="font-size:14px; font-weight:700; color:oklch(0.96 0.004 60)">24 · Bars flip to vertical here</div>
+          <div style="font-size:13px; color:oklch(0.72 0.006 60); line-height:1.5; text-wrap:pretty">The only real layout difference. Nine columns at ~110px each hold a full name underneath, so vertical reads better on desktop; below 900px the same data renders as the horizontal bars in 2a. Line charts don't change at all — the SVG viewBox does the work.</div>
+        </div>
+        <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:14px 15px; display:flex; flex-direction:column; gap:6px">
+          <div style="font-size:14px; font-weight:700; color:oklch(0.96 0.004 60)">25 · The right rail is the payoff</div>
+          <div style="font-size:13px; color:oklch(0.72 0.006 60); line-height:1.5; text-wrap:pretty">Desktop has room to show the chart and the exact numbers at once, which the phone doesn't. Ranked list, then a one-line takeaway generated from the query, then Save query and Copy image — Copy image is what gets pasted into the group chat.</div>
+        </div>
+        <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:14px 15px; display:flex; flex-direction:column; gap:6px">
+          <div style="font-size:14px; font-weight:700; color:oklch(0.96 0.004 60)">26 · Saved queries are just presets</div>
+          <div style="font-size:13px; color:oklch(0.72 0.006 60); line-height:1.5; text-wrap:pretty">A saved query stores the three control values and nothing else, so it is one small row: label plus <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">qView</span>, <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">qPlayer</span> and season. Ship two or three built-in ones so the tab has something interesting on first load; they can live in the page as constants before they ever need storing.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section style="padding:16px 64px 40px; display:flex; flex-direction:column; gap:40px">
+
+  <div style="display:flex; flex-direction:column; gap:10px; max-width:900px">
+    <div style="font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.18em; color:oklch(0.80 0.16 75); text-transform:uppercase">Turn 3 · Hall of Fame</div>
+    <div style="font-size:38px; font-weight:700; color:oklch(0.97 0.004 60); letter-spacing:-0.02em; line-height:1.1">One trophy per champion, held</div>
+    <div style="font-size:16px; color:oklch(0.70 0.006 60); line-height:1.5; text-wrap:pretty; max-width:640px">You wanted the individual trophy per year kept, so <a href="#3a">3a</a> keeps all four and gives the reigning champ the full-width slot at the top. Each banner gains the season record that won it. The trophy image is your existing file, pulled from the live site.</div>
+  </div>
+
+  <div style="display:flex; gap:56px; flex-wrap:wrap; align-items:flex-start">
+    <div id="3a" style="display:flex; gap:28px; align-items:flex-start">
+      <div style="display:flex; flex-direction:column; gap:14px">
+        <div style="display:flex; align-items:center; gap:10px">
+          <div style="font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:700; color:oklch(0.18 0.008 60); background:oklch(0.80 0.16 75); padding:3px 8px; border-radius:5px">3a</div>
+          <div style="font-size:15px; font-weight:600; color:oklch(0.95 0.004 60)">Hall of Fame</div>
+        </div>
+        <div style="padding:11px; background:#000; border-radius:52px; box-shadow:0 30px 70px -20px rgba(0,0,0,0.75)">
+          <div style="width:390px; height:812px; border-radius:42px; overflow:hidden; background:oklch(0.145 0.006 60); display:flex; flex-direction:column">
+
+            <div style="flex:0 0 auto; padding:14px 16px 0; display:flex; flex-direction:column; gap:12px; border-bottom:1px solid oklch(0.26 0.008 60)">
+              <div style="display:flex; align-items:center; justify-content:space-between">
+                <div style="font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.16em; color:oklch(0.80 0.16 75); font-weight:700">PICKS GAME</div>
+                <div style="width:26px; height:26px; border-radius:50%; background:oklch(0.30 0.008 60); color:oklch(0.90 0.004 60); font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center">RB</div>
+              </div>
+              <div style="display:flex; gap:4px">
+                <div style="flex:1; text-align:center; padding:8px 0; font-size:12px; font-weight:500; color:oklch(0.68 0.006 60)">Picks</div>
+                <div style="flex:1; text-align:center; padding:8px 0; font-size:12px; font-weight:500; color:oklch(0.68 0.006 60)">{{ slipTab }}</div>
+                <div style="flex:1; text-align:center; padding:8px 0; font-size:12px; font-weight:500; color:oklch(0.68 0.006 60)">Board</div>
+                <div style="flex:1; text-align:center; padding:8px 0; font-size:12px; font-weight:500; color:oklch(0.68 0.006 60)">Queries</div>
+                <div style="flex:1; text-align:center; padding:8px 0; font-size:12px; font-weight:600; color:oklch(0.18 0.008 60); background:oklch(0.80 0.16 75); border-radius:8px 8px 0 0">HOF</div>
+              </div>
+            </div>
+
+            <div style="flex:1 1 auto; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:16px">
+
+              <div style="border:1px solid oklch(0.80 0.16 75 / 0.45); border-radius:14px; background:oklch(0.80 0.16 75 / 0.07); padding:18px 18px 16px; display:flex; flex-direction:column; align-items:center; gap:8px">
+                <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.18em; color:oklch(0.80 0.16 75)">REIGNING CHAMPION</div>
+                <img src="https://quinton4mvp.com/trophy-gold-transparent-background-19.webp" alt="Trophy" style="width:104px; height:104px; object-fit:contain; display:block" />
+                <div style="font-size:27px; font-weight:700; color:oklch(0.97 0.004 60); letter-spacing:-0.02em; line-height:1.1">Whit Payne</div>
+                <div style="font-family:'JetBrains Mono',monospace; font-size:12px; letter-spacing:0.06em; color:oklch(0.80 0.16 75)">2025–2026</div>
+                <div style="display:flex; align-items:center; gap:14px; margin-top:4px; padding-top:12px; border-top:1px solid oklch(0.80 0.16 75 / 0.25); width:100%; justify-content:center">
+                  <div style="display:flex; flex-direction:column; align-items:center; gap:1px">
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:15px; font-weight:700; color:oklch(0.94 0.004 60)">41-29</div>
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.1em; color:oklch(0.60 0.006 60)">RECORD</div>
+                  </div>
+                  <div style="width:1px; height:26px; background:oklch(0.32 0.008 60)"></div>
+                  <div style="display:flex; flex-direction:column; align-items:center; gap:1px">
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:15px; font-weight:700; color:oklch(0.94 0.004 60)">.586</div>
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.1em; color:oklch(0.60 0.006 60)">PCT</div>
+                  </div>
+                  <div style="width:1px; height:26px; background:oklch(0.32 0.008 60)"></div>
+                  <div style="display:flex; flex-direction:column; align-items:center; gap:1px">
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:15px; font-weight:700; color:oklch(0.94 0.004 60)">6</div>
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.1em; color:oklch(0.60 0.006 60)">WEEKS WON</div>
+                  </div>
+                </div>
+              </div>
+
+              <div style="font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.14em; color:oklch(0.58 0.006 60)">PAST CHAMPIONS</div>
+
+              <sc-for list="{{ champs }}" as="c" hint-placeholder-count="3">
+                <div style="border:1px solid oklch(0.28 0.008 60); border-radius:12px; background:oklch(0.175 0.006 60); padding:13px 15px; display:grid; grid-template-columns:52px 1fr auto; align-items:center; gap:13px">
+                  <img src="https://quinton4mvp.com/trophy-gold-transparent-background-19.webp" alt="Trophy" style="width:52px; height:52px; object-fit:contain; display:block" />
+                  <div style="display:flex; flex-direction:column; gap:2px; min-width:0">
+                    <div style="font-size:17px; font-weight:700; color:oklch(0.96 0.004 60); letter-spacing:-0.015em">{{ c.name }}</div>
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:10.5px; letter-spacing:0.06em; color:oklch(0.80 0.16 75)">{{ c.year }}</div>
+                    <div style="font-size:11.5px; color:oklch(0.62 0.006 60); white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ c.note }}</div>
+                  </div>
+                  <div style="display:flex; flex-direction:column; align-items:flex-end; gap:2px">
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:700; color:oklch(0.92 0.004 60)">{{ c.pct }}</div>
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:10px; color:oklch(0.60 0.006 60)">{{ c.rec }}</div>
+                  </div>
+                </div>
+              </sc-for>
+
+              <div style="border-top:1px solid oklch(0.24 0.008 60); padding-top:14px; display:flex; flex-direction:column; gap:10px">
+                <div style="font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.14em; color:oklch(0.58 0.006 60)">TITLES BY PLAYER</div>
+                <div style="display:flex; flex-wrap:wrap; gap:7px">
+                  <sc-for list="{{ titles }}" as="t" hint-placeholder-count="4">
+                    <div style="display:flex; align-items:center; gap:7px; padding:7px 11px; border-radius:20px; border:1px solid oklch(0.30 0.008 60); background:oklch(0.20 0.008 60)">
+                      <div style="font-size:13px; font-weight:600; color:oklch(0.94 0.004 60)">{{ t.name }}</div>
+                      <div style="font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:700; color:oklch(0.80 0.16 75)">×{{ t.n }}</div>
+                    </div>
+                  </sc-for>
+                </div>
+                <div style="font-size:12.5px; color:oklch(0.62 0.006 60); line-height:1.5">Four seasons, four different champions. Nobody has repeated.</div>
+              </div>
+
+              <div style="height:8px"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="width:330px; display:flex; flex-direction:column; gap:16px; padding-top:44px">
+        <div style="font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.16em; color:oklch(0.80 0.16 75)">BUILD NOTES</div>
+        <div style="display:flex; flex-direction:column; gap:14px">
+          <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:14px 15px; display:flex; flex-direction:column; gap:6px">
+            <div style="font-size:14px; font-weight:700; color:oklch(0.96 0.004 60)">20 · Reigning champ gets the hero</div>
+            <div style="font-size:13px; color:oklch(0.72 0.006 60); line-height:1.5; text-wrap:pretty">Same four trophies as today, but the current champion is a full-width amber-tinted card with a 104px trophy and three stats — record, pct, weeks won. Past champions drop to 52px trophies in a list. Order is newest first; today it reads oldest first.</div>
+          </div>
+          <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:14px 15px; display:flex; flex-direction:column; gap:6px">
+            <div style="font-size:14px; font-weight:700; color:oklch(0.96 0.004 60)">21 · Add the record that won it</div>
+            <div style="font-size:13px; color:oklch(0.72 0.006 60); line-height:1.5; text-wrap:pretty">Right now a banner is just year plus name. Season record, pct, and a one-line note give each year something to argue about. If you don't have full history for 2022–2023, print the year and name and leave the stats column empty rather than faking it.</div>
+          </div>
+          <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:14px 15px; display:flex; flex-direction:column; gap:6px">
+            <div style="font-size:14px; font-weight:700; color:oklch(0.96 0.004 60)">22 · Titles strip at the bottom</div>
+            <div style="font-size:13px; color:oklch(0.72 0.006 60); line-height:1.5; text-wrap:pretty">Chips counting titles per player, so the page still says something once there are eight seasons of banners. When someone repeats, the chip reads ×2 and their name moves to the front.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section style="padding:16px 64px 40px; display:flex; flex-direction:column; gap:40px">
+
+  <div style="display:flex; flex-direction:column; gap:10px; max-width:900px">
+    <div style="font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.18em; color:oklch(0.80 0.16 75); text-transform:uppercase">Turn 2 · Queries</div>
+    <div style="font-size:38px; font-weight:700; color:oklch(0.97 0.004 60); letter-spacing:-0.02em; line-height:1.1">Build the question, get the chart</div>
+    <div style="font-size:16px; color:oklch(0.70 0.006 60); line-height:1.5; text-wrap:pretty; max-width:640px">Three controls — view, player, season — and the chart redraws under them. <a href="#2a">2a</a> is clickable: change any of them. The two week views draw a line; the other six draw ranked horizontal bars, which is the only bar orientation where nine player names stay readable at 390px. <a href="#2b">2b</a> is the full-size version for when a chart deserves the whole screen.</div>
+  </div>
+
+  <div style="display:flex; gap:56px; flex-wrap:wrap; align-items:flex-start">
+
+    <div id="2a" style="display:flex; gap:28px; align-items:flex-start">
+      <div style="display:flex; flex-direction:column; gap:14px">
+        <div style="display:flex; align-items:center; gap:10px">
+          <div style="font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:700; color:oklch(0.18 0.008 60); background:oklch(0.80 0.16 75); padding:3px 8px; border-radius:5px">2a</div>
+          <div style="font-size:15px; font-weight:600; color:oklch(0.95 0.004 60)">Queries · interactive</div>
+        </div>
+        <div style="padding:11px; background:#000; border-radius:52px; box-shadow:0 30px 70px -20px rgba(0,0,0,0.75)">
+          <div style="width:390px; height:812px; border-radius:42px; overflow:hidden; background:oklch(0.145 0.006 60); display:flex; flex-direction:column">
+
+            <div style="flex:0 0 auto; padding:14px 16px 0; display:flex; flex-direction:column; gap:12px; border-bottom:1px solid oklch(0.26 0.008 60)">
+              <div style="display:flex; align-items:center; justify-content:space-between">
+                <div style="font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.16em; color:oklch(0.80 0.16 75); font-weight:700">PICKS GAME</div>
+                <div style="width:26px; height:26px; border-radius:50%; background:oklch(0.30 0.008 60); color:oklch(0.90 0.004 60); font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center">RB</div>
+              </div>
+              <div style="display:flex; gap:4px">
+                <div style="flex:1; text-align:center; padding:8px 0; font-size:12px; font-weight:500; color:oklch(0.68 0.006 60)">Picks</div>
+                <div style="flex:1; text-align:center; padding:8px 0; font-size:12px; font-weight:500; color:oklch(0.68 0.006 60)">{{ slipTab }}</div>
+                <div style="flex:1; text-align:center; padding:8px 0; font-size:12px; font-weight:500; color:oklch(0.68 0.006 60)">Board</div>
+                <div style="flex:1; text-align:center; padding:8px 0; font-size:12px; font-weight:600; color:oklch(0.18 0.008 60); background:oklch(0.80 0.16 75); border-radius:8px 8px 0 0">Queries</div>
+                <div style="flex:1; text-align:center; padding:8px 0; font-size:12px; font-weight:500; color:oklch(0.68 0.006 60)">HOF</div>
+              </div>
+            </div>
+
+            <div style="flex:0 0 auto; padding:12px 16px 13px; background:oklch(0.175 0.006 60); border-bottom:1px solid oklch(0.26 0.008 60); display:flex; flex-direction:column; gap:9px">
+              <div style="display:flex; flex-direction:column; gap:8px">
+                <div style="display:flex; flex-direction:column; gap:4px">
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.12em; color:oklch(0.58 0.006 60)">VIEW</div>
+                  <select value="{{ qView }}" onChange="{{ onView }}" style="height:38px; padding:0 9px; border-radius:8px; background:oklch(0.235 0.008 60); border:1px solid oklch(0.32 0.008 60); color:oklch(0.96 0.004 60); font-family:'Barlow',sans-serif; font-size:14px; font-weight:600; appearance:none; -webkit-appearance:none">
+                    <sc-for list="{{ views }}" as="v" hint-placeholder-count="8"><option value="{{ v.v }}">{{ v.label }}</option></sc-for>
+                  </select>
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 118px; gap:8px">
+                  <div style="display:flex; flex-direction:column; gap:4px">
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.12em; color:oklch(0.58 0.006 60)">PLAYER</div>
+                    <select value="{{ qWho }}" onChange="{{ onWho }}" style="height:36px; padding:0 9px; border-radius:8px; background:oklch(0.235 0.008 60); border:1px solid oklch(0.32 0.008 60); color:oklch(0.96 0.004 60); font-family:'Barlow',sans-serif; font-size:13.5px; font-weight:600; appearance:none; -webkit-appearance:none">
+                      <sc-for list="{{ whoList }}" as="w" hint-placeholder-count="10"><option value="{{ w }}">{{ w }}</option></sc-for>
+                    </select>
+                  </div>
+                  <div style="display:flex; flex-direction:column; gap:4px">
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.12em; color:oklch(0.58 0.006 60)">SEASON</div>
+                    <select value="{{ qRange }}" onChange="{{ onRange }}" style="height:36px; padding:0 9px; border-radius:8px; background:oklch(0.235 0.008 60); border:1px solid oklch(0.32 0.008 60); color:oklch(0.96 0.004 60); font-family:'Barlow',sans-serif; font-size:13.5px; font-weight:600; appearance:none; -webkit-appearance:none">
+                      <sc-for list="{{ ranges }}" as="r" hint-placeholder-count="3"><option value="{{ r }}">{{ r }}</option></sc-for>
+                    </select>
+                  </div>
+                </div>
+              </div>
+              <div style="display:flex; align-items:center; gap:8px">
+                <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; color:oklch(0.56 0.006 60)">GRADED 3H AGO</div>
+                <div style="flex:1"></div>
+                <div style="padding:6px 10px; border-radius:7px; background:oklch(0.80 0.16 75 / 0.14); border:1px solid oklch(0.80 0.16 75); font-family:'JetBrains Mono',monospace; font-size:10px; color:oklch(0.80 0.16 75); font-weight:700">FULL SCREEN ⤢</div>
+              </div>
+            </div>
+
+            <div style="flex:1 1 auto; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:14px">
+              <div style="display:flex; flex-direction:column; gap:3px">
+                <div style="font-size:19px; font-weight:700; color:oklch(0.97 0.004 60); letter-spacing:-0.015em">{{ bigTitle }}</div>
+                <div style="font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.06em; color:oklch(0.62 0.006 60)">{{ readout }}</div>
+              </div>
+
+              <sc-if value="{{ isLine }}" hint-placeholder-val="{{ false }}">
+                <div style="border:1px solid oklch(0.28 0.008 60); border-radius:12px; background:oklch(0.175 0.006 60); padding:10px 8px 6px">
+                  <svg viewBox="0 0 {{ chartW }} {{ chartH }}" width="100%" style="display:block; overflow:visible">
+                    <sc-for list="{{ grid }}" as="g" hint-placeholder-count="7">
+                      <line x1="{{ axisX }}" x2="{{ chartW }}" y1="{{ g.y }}" y2="{{ g.y }}" stroke="oklch(0.34 0.008 60)" stroke-width="1" stroke-dasharray="4 5"></line>
+                    </sc-for>
+                    <sc-for list="{{ grid }}" as="g" hint-placeholder-count="7">
+                      <text x="8" y="{{ g.y }}" dy="4" fill="oklch(0.60 0.006 60)" font-family="JetBrains Mono, monospace" font-size="15">{{ g.label }}</text>
+                    </sc-for>
+                    <path d="{{ linePath }}" fill="none" stroke="oklch(0.80 0.16 75)" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"></path>
+                    <sc-for list="{{ pts }}" as="p" hint-placeholder-count="8">
+                      <circle cx="{{ p.cx }}" cy="{{ p.cy }}" r="5" fill="oklch(0.145 0.006 60)" stroke="oklch(0.80 0.16 75)" stroke-width="3"></circle>
+                    </sc-for>
+                    <sc-for list="{{ pts }}" as="p" hint-placeholder-count="8">
+                      <text x="{{ p.cx }}" y="{{ axisY }}" dy="22" text-anchor="middle" fill="oklch(0.62 0.006 60)" font-family="JetBrains Mono, monospace" font-size="15">{{ p.label }}</text>
+                    </sc-for>
+                  </svg>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ showFifty }}" hint-placeholder-val="{{ true }}">
+                <div style="display:flex; align-items:center; gap:7px; font-family:'JetBrains Mono',monospace; font-size:9.5px; color:oklch(0.60 0.006 60)">
+                  <div style="width:26px; height:1px; background:oklch(0.55 0.006 60)"></div>
+                  <div>50% BREAK-EVEN MARKER SITS AT MID-BAR</div>
+                </div>
+              </sc-if>
+
+              <div style="display:flex; flex-direction:column; gap:9px">
+                <sc-for list="{{ bars }}" as="b" hint-placeholder-count="9">
+                  <div style="display:grid; grid-template-columns:1fr; gap:4px">
+                    <div style="display:flex; align-items:baseline; justify-content:space-between; gap:8px">
+                      <div style="font-size:13.5px; font-weight:600; color:oklch(0.94 0.004 60); white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ b.label }}</div>
+                      <div style="font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:700; color:{{ b.valFg }}">{{ b.val }}</div>
+                    </div>
+                    <div style="height:12px; border-radius:3px; background:oklch(0.235 0.008 60); position:relative">
+                      <div style="position:absolute; top:0; bottom:0; left:50%; width:1px; background:oklch(0.55 0.006 60); display:{{ zeroLine }}"></div>
+                      <div style="height:12px; border-radius:3px; background:{{ b.fg }}; width:{{ b.w }}; margin-left:{{ b.left }}"></div>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+
+              <div style="font-size:12.5px; color:oklch(0.64 0.006 60); line-height:1.5; padding-bottom:8px">{{ caption }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="width:330px; display:flex; flex-direction:column; gap:16px; padding-top:44px">
+        <div style="font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.16em; color:oklch(0.80 0.16 75)">BUILD NOTES</div>
+        <div style="display:flex; flex-direction:column; gap:14px">
+          <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:14px 15px; display:flex; flex-direction:column; gap:6px">
+            <div style="font-size:14px; font-weight:700; color:oklch(0.96 0.004 60)">13 · Three controls, eight views</div>
+            <div style="font-size:13px; color:oklch(0.72 0.006 60); line-height:1.5; text-wrap:pretty">VIEW is <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">qView</span> with the eight values the render code already switches on, labelled in plain words: Win % by player, Win % by market, Units by market, NFL vs college, Win % by week, Cumulative units, Best teams, Worst teams. PLAYER is <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">qPlayer</span> — All players or one of the nine. SEASON is the shared <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">seasonPicker</span>, since <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.86 0.006 60)">fn=stats</span> has no week-range filter. The readout under the title prints the raw view name and season, so a screenshot in the group chat is self-explaining.</div>
+          </div>
+          <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:14px 15px; display:flex; flex-direction:column; gap:6px">
+            <div style="font-size:14px; font-weight:700; color:oklch(0.96 0.004 60)">14 · Chart type follows the view</div>
+            <div style="font-size:13px; color:oklch(0.72 0.006 60); line-height:1.5; text-wrap:pretty">The two week views — Win % by week and Cumulative units — draw a line, because they are time. The other six are comparisons and draw bars: horizontal on the phone, where nine full names need the width, and vertical columns on desktop (see <a href="#4a">4a</a> and note 24). Sort direction is baked into the view rather than a control, which is why Best teams and Worst teams are separate options; the outermost bar is amber, the rest muted amber-grey.</div>
+          </div>
+          <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:14px 15px; display:flex; flex-direction:column; gap:6px">
+            <div style="font-size:14px; font-weight:700; color:oklch(0.96 0.004 60)">15 · Win % starts at 30, not 0</div>
+            <div style="font-size:13px; color:oklch(0.72 0.006 60); line-height:1.5; text-wrap:pretty">Everyone lands between .450 and .600, so a 0-based axis flattens the whole league into one blob. Line charts clip the axis to 30–105% and mark 50% with a heavier dashed rule; bars stay proportional to the max value with the break-even marker called out. The unit views are the opposite case and need a signed baseline: zero sits mid-track, positives grow one way and negatives the other in red, all scaled off the largest absolute value. Never draw a negative by magnitude alone — the worst performer ends up with the tallest bar.</div>
+          </div>
+          <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:14px 15px; display:flex; flex-direction:column; gap:6px">
+            <div style="font-size:14px; font-weight:700; color:oklch(0.96 0.004 60)">16 · Charts are SVG with a viewBox</div>
+            <div style="font-size:13px; color:oklch(0.72 0.006 60); line-height:1.5; text-wrap:pretty">width:100% plus a fixed viewBox means one chart scales from 390px to desktop with no redraw and no chart library. Axis text lives inside the SVG at ~15 viewBox units so it renders around 11px on the phone. Don't set a pixel width on the svg.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="2b" style="display:flex; gap:28px; align-items:flex-start">
+      <div style="display:flex; flex-direction:column; gap:14px">
+        <div style="display:flex; align-items:center; gap:10px">
+          <div style="font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:700; color:oklch(0.18 0.008 60); background:oklch(0.80 0.16 75); padding:3px 8px; border-radius:5px">2b</div>
+          <div style="font-size:15px; font-weight:600; color:oklch(0.95 0.004 60)">Full screen · rotate to compare</div>
+        </div>
+        <div style="padding:11px; background:#000; border-radius:52px; box-shadow:0 30px 70px -20px rgba(0,0,0,0.75)">
+          <div style="width:812px; height:390px; border-radius:42px; overflow:hidden; background:oklch(0.145 0.006 60); display:flex; flex-direction:column; padding:16px 22px">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px">
+              <div style="display:flex; flex-direction:column; gap:3px">
+                <div style="font-size:21px; font-weight:700; color:oklch(0.97 0.004 60); letter-spacing:-0.015em">Win % by week</div>
+                <div style="font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.08em; color:oklch(0.62 0.006 60)">THIS SEASON · WHIT PAYNE VS IVAN</div>
+              </div>
+              <div style="display:flex; align-items:center; gap:16px">
+                <sc-for list="{{ series }}" as="s" hint-placeholder-count="2">
+                  <div style="display:flex; align-items:center; gap:7px">
+                    <div style="width:16px; height:3px; border-radius:2px; background:{{ s.color }}"></div>
+                    <div style="font-size:13px; font-weight:600; color:oklch(0.92 0.004 60)">{{ s.name }}</div>
+                  </div>
+                </sc-for>
+                <div style="width:30px; height:30px; border-radius:8px; border:1px solid oklch(0.32 0.008 60); color:oklch(0.78 0.006 60); display:flex; align-items:center; justify-content:center; font-size:14px">✕</div>
+              </div>
+            </div>
+            <div style="flex:1; display:flex; align-items:center">
+              <svg viewBox="0 0 {{ bigW }} {{ bigH }}" width="100%" style="display:block">
+                <sc-for list="{{ bigGrid }}" as="g" hint-placeholder-count="7">
+                  <line x1="{{ bigAxisX }}" x2="{{ bigW }}" y1="{{ g.y }}" y2="{{ g.y }}" stroke="oklch(0.32 0.008 60)" stroke-width="1" stroke-dasharray="4 6"></line>
+                </sc-for>
+                <sc-for list="{{ bigGrid }}" as="g" hint-placeholder-count="7">
+                  <text x="10" y="{{ g.y }}" dy="4" fill="oklch(0.62 0.006 60)" font-family="JetBrains Mono, monospace" font-size="13">{{ g.label }}</text>
+                </sc-for>
+                <sc-for list="{{ bigTicks }}" as="t" hint-placeholder-count="8">
+                  <text x="{{ t.x }}" y="{{ bigAxisY }}" dy="24" text-anchor="middle" fill="oklch(0.64 0.006 60)" font-family="JetBrains Mono, monospace" font-size="13">{{ t.label }}</text>
+                </sc-for>
+                <sc-for list="{{ series }}" as="s" hint-placeholder-count="2">
+                  <path d="{{ s.path }}" fill="none" stroke="{{ s.color }}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"></path>
+                </sc-for>
+                <sc-for list="{{ series }}" as="s" hint-placeholder-count="2">
+                  <sc-for list="{{ s.pts }}" as="p" hint-placeholder-count="8">
+                    <circle cx="{{ p.cx }}" cy="{{ p.cy }}" r="5" fill="oklch(0.145 0.006 60)" stroke="{{ s.color }}" stroke-width="3"></circle>
+                  </sc-for>
+                </sc-for>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="width:330px; display:flex; flex-direction:column; gap:16px; padding-top:44px">
+        <div style="font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.16em; color:oklch(0.80 0.16 75)">BUILD NOTES</div>
+        <div style="display:flex; flex-direction:column; gap:14px">
+          <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:14px 15px; display:flex; flex-direction:column; gap:6px">
+            <div style="font-size:14px; font-weight:700; color:oklch(0.96 0.004 60)">17 · Full screen is the same chart</div>
+            <div style="font-size:13px; color:oklch(0.72 0.006 60); line-height:1.5; text-wrap:pretty">FULL SCREEN ⤢ hides the header, tabs and dropdowns and gives the SVG the whole viewport; it also fires on a landscape rotate. Same component, same data, bigger viewBox — the query bar collapses into the title and subtitle. This is where "biggest format possible" gets paid off, without cramming it into 390px.</div>
+          </div>
+          <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:14px 15px; display:flex; flex-direction:column; gap:6px">
+            <div style="font-size:14px; font-weight:700; color:oklch(0.96 0.004 60)">18 · Two series max</div>
+            <div style="font-size:13px; color:oklch(0.72 0.006 60); line-height:1.5; text-wrap:pretty">Setting PLAYER to a name and adding one comparison draws two lines: amber for the primary, white for the comparison. Nine lines is unreadable, so cap it at two and use the bar view for league-wide comparisons. Legend sits top right, never over the plot.</div>
+          </div>
+          <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:14px 15px; display:flex; flex-direction:column; gap:6px">
+            <div style="font-size:14px; font-weight:700; color:oklch(0.96 0.004 60)">19 · Points are the tap targets</div>
+            <div style="font-size:13px; color:oklch(0.72 0.006 60); line-height:1.5; text-wrap:pretty">Each dot needs an invisible 24px hit circle behind it; tapping shows that week's value and record. No hover-only tooltips — this is a phone.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<section style="padding:16px 64px 96px; display:flex; flex-direction:column; gap:40px">
+
+  <div style="display:flex; flex-direction:column; gap:10px; max-width:900px">
+    <div style="font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.18em; color:oklch(0.80 0.16 75); text-transform:uppercase">Turn 1 · quinton4mvp.com mobile redesign</div>
+    <div style="font-size:38px; font-weight:700; color:oklch(0.97 0.004 60); letter-spacing:-0.02em; line-height:1.1">Five picks in under a minute</div>
+    <div style="font-size:16px; color:oklch(0.70 0.006 60); line-height:1.5; text-wrap:pretty; max-width:640px">Today each game is a card of six stacked full-width pills, so a 60-game week is a very long scroll. The fix is a sportsbook odds grid: one game per compact row, six tappable cells, and a slot bar pinned at the bottom that shows exactly which of your five picks are still missing. <a href="#1a">1a</a> is clickable — tap cells and watch illegal ones dim out.</div>
+  </div>
+
+  <div style="display:flex; gap:56px; flex-wrap:wrap; align-items:flex-start">
+
+    <div id="1a" style="display:flex; gap:28px; align-items:flex-start">
+      <div style="display:flex; flex-direction:column; gap:14px">
+        <div style="display:flex; align-items:center; gap:10px">
+          <div style="font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:700; color:oklch(0.18 0.008 60); background:oklch(0.80 0.16 75); padding:3px 8px; border-radius:5px">1a</div>
+          <div style="font-size:15px; font-weight:600; color:oklch(0.95 0.004 60)">Make Picks · interactive</div>
+        </div>
+
+        <div style="padding:11px; background:#000; border-radius:52px; box-shadow:0 30px 70px -20px rgba(0,0,0,0.75)">
+          <div style="width:390px; height:812px; border-radius:42px; overflow:hidden; background:oklch(0.145 0.006 60); display:flex; flex-direction:column; position:relative">
+
+            <div style="flex:0 0 auto; padding:14px 16px 0; display:flex; flex-direction:column; gap:12px; background:oklch(0.145 0.006 60); border-bottom:1px solid oklch(0.26 0.008 60)">
+              <div style="display:flex; align-items:center; justify-content:space-between">
+                <div style="font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.16em; color:oklch(0.80 0.16 75); font-weight:700">PICKS GAME</div>
+                <div style="display:flex; align-items:center; gap:7px">
+                  <div style="display:flex; align-items:center; gap:6px; height:26px; padding:0 9px; border-radius:7px; border:1px solid oklch(0.30 0.008 60)">
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:8.5px; letter-spacing:0.1em; color:oklch(0.58 0.006 60)">SEASON</div>
+                    <div style="font-size:11.5px; font-weight:600; color:oklch(0.94 0.004 60)">2025-26</div>
+                  </div>
+                  <div style="width:26px; height:26px; border-radius:50%; background:oklch(0.30 0.008 60); color:oklch(0.90 0.004 60); font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center">RB</div>
+                </div>
+              </div>
+
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px">
+                <input type="text" value="Reid Basu" style="height:32px; padding:0 10px; border-radius:8px; background:oklch(0.21 0.008 60); border:1px solid oklch(0.30 0.008 60); color:oklch(0.94 0.004 60); font-family:'Barlow',sans-serif; font-size:12.5px; outline:0" />
+                <input type="text" value="reid@gmail.com" style="height:32px; padding:0 10px; border-radius:8px; background:oklch(0.21 0.008 60); border:1px solid oklch(0.30 0.008 60); color:oklch(0.94 0.004 60); font-family:'Barlow',sans-serif; font-size:12.5px; outline:0" />
+              </div>
+
+              <div style="display:flex; align-items:center; gap:8px">
+                <div style="width:30px; height:30px; border-radius:8px; border:1px solid oklch(0.30 0.008 60); color:oklch(0.72 0.006 60); display:flex; align-items:center; justify-content:center; font-size:15px">‹</div>
+                <div style="flex:1; text-align:center; display:flex; flex-direction:column; gap:1px">
+                  <div style="font-size:16px; font-weight:600; color:oklch(0.96 0.004 60); letter-spacing:-0.01em">Week of Dec 3</div>
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:10px; color:oklch(0.62 0.006 60)">EACH GAME LOCKS AT KICKOFF</div>
+                </div>
+                <div style="width:30px; height:30px; border-radius:8px; border:1px solid oklch(0.30 0.008 60); color:oklch(0.72 0.006 60); display:flex; align-items:center; justify-content:center; font-size:15px">›</div>
+              </div>
+
+              <div style="display:flex; gap:4px">
+                <div style="flex:1; text-align:center; padding:8px 0; font-size:12px; font-weight:600; color:oklch(0.18 0.008 60); background:oklch(0.80 0.16 75); border-radius:8px 8px 0 0">Picks</div>
+                <div style="flex:1; text-align:center; padding:8px 0; font-size:12px; font-weight:500; color:oklch(0.68 0.006 60)">{{ slipTab }}</div>
+                <div style="flex:1; text-align:center; padding:8px 0; font-size:12px; font-weight:500; color:oklch(0.68 0.006 60)">Board</div>
+                <div style="flex:1; text-align:center; padding:8px 0; font-size:12px; font-weight:500; color:oklch(0.68 0.006 60)">Queries</div>
+                <div style="flex:1; text-align:center; padding:8px 0; font-size:12px; font-weight:500; color:oklch(0.68 0.006 60)">HOF</div>
+              </div>
+            </div>
+
+            <div style="flex:0 0 auto; padding:10px 16px; display:flex; flex-direction:column; gap:9px; background:oklch(0.175 0.006 60); border-bottom:1px solid oklch(0.26 0.008 60)">
+              <div style="display:flex; align-items:center; gap:8px">
+                <div style="flex:1; display:flex; align-items:center; gap:7px; height:34px; padding:0 10px; border-radius:9px; background:oklch(0.24 0.008 60); border:1px solid oklch(0.30 0.008 60)">
+                  <div style="width:11px; height:11px; border-radius:50%; border:1.5px solid oklch(0.62 0.006 60)"></div>
+                  <input type="text" placeholder="Search team" value="{{ q }}" onChange="{{ onQuery }}" style="flex:1; background:transparent; border:0; outline:0; color:oklch(0.96 0.004 60); font-family:'Barlow',sans-serif; font-size:13px" />
+                </div>
+                <div onClick="{{ onSort }}" style="height:34px; padding:0 11px; display:flex; align-items:center; gap:6px; border-radius:9px; background:oklch(0.24 0.008 60); border:1px solid oklch(0.30 0.008 60); cursor:pointer; font-family:'JetBrains Mono',monospace; font-size:10px; color:oklch(0.80 0.006 60); white-space:nowrap">{{ sortLabel }}</div>
+              </div>
+              <div style="display:flex; gap:6px">
+                <sc-for list="{{ sportTabs }}" as="t" hint-placeholder-count="4">
+                  <div onClick="{{ t.on }}" style="padding:5px 12px; border-radius:20px; font-size:12px; font-weight:600; cursor:pointer; border:1px solid oklch(0.30 0.008 60); background:{{ t.bg }}; color:{{ t.fg }}">{{ t.label }}</div>
+                </sc-for>
+              </div>
+            </div>
+
+            <div style="flex:0 0 auto; display:grid; grid-template-columns:74px 1fr 1fr 1fr; padding:6px 16px; background:oklch(0.145 0.006 60); border-bottom:1px solid oklch(0.26 0.008 60)">
+              <div style="font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.12em; color:oklch(0.58 0.006 60)">TEAM</div>
+              <div style="font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.12em; color:oklch(0.58 0.006 60); text-align:center">SPREAD</div>
+              <div style="font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.12em; color:oklch(0.58 0.006 60); text-align:center">TOTAL</div>
+              <div style="font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.12em; color:oklch(0.58 0.006 60); text-align:center">ML</div>
+            </div>
+
+            <div style="flex:1 1 auto; overflow-y:auto; overflow-x:hidden">
+              <sc-for list="{{ games }}" as="g" hint-placeholder-count="6">
+                <div style="border-bottom:1px solid oklch(0.24 0.008 60); padding:9px 16px 11px; display:flex; flex-direction:column; gap:7px; opacity:{{ g.rowOp }}">
+                  <div style="display:flex; align-items:center; gap:8px">
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; font-weight:700; letter-spacing:0.06em; color:{{ g.tagFg }}; background:{{ g.tagBg }}; padding:2px 5px; border-radius:4px">{{ g.league }}</div>
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:10.5px; color:oklch(0.64 0.006 60)">{{ g.time }}</div>
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:9px; font-weight:700; letter-spacing:0.08em; color:oklch(0.70 0.006 60); border:1px solid oklch(0.36 0.008 60); padding:2px 5px; border-radius:4px; display:{{ g.lockShow }}">KICKED OFF</div>
+                    <div style="flex:1"></div>
+                    <div style="font-size:11px; color:oklch(0.60 0.006 60)">{{ g.note }}</div>
+                  </div>
+                  <sc-for list="{{ g.rows }}" as="r" hint-placeholder-count="2">
+                    <div style="display:grid; grid-template-columns:74px 1fr 1fr 1fr; gap:5px; align-items:stretch">
+                      <div style="display:flex; flex-direction:column; justify-content:center">
+                        <div style="font-size:14px; font-weight:700; color:oklch(0.96 0.004 60); letter-spacing:-0.01em">{{ r.abbr }}</div>
+                        <div style="font-size:10px; color:oklch(0.58 0.006 60); line-height:1.1">{{ r.rec }}</div>
+                      </div>
+                      <sc-for list="{{ r.cells }}" as="c" hint-placeholder-count="3">
+                        <div onClick="{{ c.on }}" style="height:46px; border-radius:8px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px; cursor:pointer; border:1px solid {{ c.bd }}; background:{{ c.bg }}; opacity:{{ c.op }}">
+                          <div style="font-size:14px; font-weight:600; letter-spacing:-0.01em; color:{{ c.fg }}">{{ c.main }}</div>
+                          <div style="font-family:'JetBrains Mono',monospace; font-size:10px; color:{{ c.sub }}">{{ c.odds }}</div>
+                        </div>
+                      </sc-for>
+                    </div>
+                  </sc-for>
+                </div>
+              </sc-for>
+              <div style="height:16px"></div>
+            </div>
+
+            <div style="flex:0 0 auto; background:oklch(0.20 0.008 60); border-top:1px solid oklch(0.32 0.008 60); padding:10px 16px 14px; display:flex; flex-direction:column; gap:9px; box-shadow:0 -14px 24px -14px rgba(0,0,0,0.7)">
+              <div style="display:flex; align-items:baseline; justify-content:space-between">
+                <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.14em; color:oklch(0.62 0.006 60)">YOUR SLIP · {{ countLabel }}</div>
+                <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; color:{{ tallyFg }}">{{ tally }}</div>
+              </div>
+              <div style="display:flex; gap:5px">
+                <sc-for list="{{ slots }}" as="s" hint-placeholder-count="5">
+                  <div onClick="{{ s.on }}" style="flex:1; min-width:0; height:50px; border-radius:9px; border:1px dashed {{ s.bd }}; background:{{ s.bg }}; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; padding:0 2px; cursor:pointer">
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:8.5px; letter-spacing:0.08em; color:{{ s.roleFg }}">{{ s.role }}</div>
+                    <div style="font-size:12px; font-weight:700; color:{{ s.fg }}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%">{{ s.pick }}</div>
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:8.5px; color:{{ s.subFg }}">{{ s.sub }}</div>
+                  </div>
+                </sc-for>
+              </div>
+              <div onClick="{{ onSubmit }}" style="height:46px; border-radius:10px; display:flex; align-items:center; justify-content:center; cursor:pointer; background:{{ submitBg }}; color:{{ submitFg }}; font-size:15px; font-weight:700; letter-spacing:-0.01em">{{ submitLabel }}</div>
+            </div>
+
+            <sc-if value="{{ submitted }}" hint-placeholder-val="{{ false }}">
+              <div style="position:absolute; inset:0; background:oklch(0.145 0.006 60 / 0.94); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; padding:40px; text-align:center">
+                <div style="width:56px; height:56px; border-radius:50%; background:oklch(0.80 0.16 75); color:oklch(0.18 0.008 60); font-size:26px; font-weight:700; display:flex; align-items:center; justify-content:center">✓</div>
+                <div style="font-size:22px; font-weight:700; color:oklch(0.97 0.004 60)">Picks in</div>
+                <div style="font-size:14px; color:oklch(0.70 0.006 60); line-height:1.5">Five picks for Week of Dec 3. You can change any pick until its own game kicks off; games already under way stay as they are.</div>
+                <div onClick="{{ onReset }}" style="margin-top:6px; padding:11px 20px; border-radius:9px; border:1px solid oklch(0.34 0.008 60); color:oklch(0.90 0.004 60); font-size:13px; font-weight:600; cursor:pointer">Reset demo</div>
+              </div>
+            </sc-if>
+
+          </div>
+        </div>
+      </div>
+
+      <div style="width:330px; display:flex; flex-direction:column; gap:16px; padding-top:44px">
+        <div style="font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.16em; color:oklch(0.80 0.16 75)">BUILD NOTES</div>
+        <div style="display:flex; flex-direction:column; gap:14px">
+          <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:14px 15px; display:flex; flex-direction:column; gap:6px">
+            <div style="font-size:14px; font-weight:700; color:oklch(0.96 0.004 60)">1 · Odds grid replaces the card</div>
+            <div style="font-size:13px; color:oklch(0.72 0.006 60); line-height:1.5; text-wrap:pretty">Each game is two rows (away on top, home below) × four columns: team, spread, total, ML. Six tap targets per game in ~115px of height instead of ~500px. Cells are 46px tall, above the 44px minimum.</div>
+          </div>
+          <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:14px 15px; display:flex; flex-direction:column; gap:6px">
+            <div style="font-size:14px; font-weight:700; color:oklch(0.96 0.004 60)">2 · Legality by dimming, not by error</div>
+            <div style="font-size:13px; color:oklch(0.72 0.006 60); line-height:1.5; text-wrap:pretty">A cell dims to 28% and stops responding when it can't legally be picked: its role (fav / dog / over / under / ML) is already used, the league already has 2 of its 2, or the ML is -200 or worse. Kill the red "must satisfy all constraints" banner — the grid itself should never allow an illegal slip.</div>
+          </div>
+          <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:14px 15px; display:flex; flex-direction:column; gap:6px">
+            <div style="font-size:14px; font-weight:700; color:oklch(0.96 0.004 60)">3 · Slot bar is the rules</div>
+            <div style="font-size:13px; color:oklch(0.72 0.006 60); line-height:1.5; text-wrap:pretty">Five dashed slots — FAV, DOG, OVER, UNDER, ML — pinned to the bottom. Empty slots read as blanks to fill; filled slots show team and line. The NFL 2/2 · CFB 2/2 tally sits above and turns amber when satisfied. Tap a filled slot to clear it. This keeps the "you're missing 1 NFL" clarity you liked, always on screen.</div>
+          </div>
+          <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:14px 15px; display:flex; flex-direction:column; gap:6px">
+            <div style="font-size:14px; font-weight:700; color:oklch(0.96 0.004 60)">4 · Finding a game in a 60-game week</div>
+            <div style="font-size:13px; color:oklch(0.72 0.006 60); line-height:1.5; text-wrap:pretty">Search filters on team name as you type. League chips are All / NFL / CFB. The sort control cycles Kickoff → Biggest spread → Closest line, which is how you scan for value. Default sort is kickoff.</div>
+          </div>
+          <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:14px 15px; display:flex; flex-direction:column; gap:6px">
+            <div style="font-size:14px; font-weight:700; color:oklch(0.96 0.004 60)">5 · Each game locks itself</div>
+            <div style="font-size:13px; color:oklch(0.72 0.006 60); line-height:1.5; text-wrap:pretty">Button stays inert until all five slots are legal, then goes amber. There is no slate deadline: a game whose kickoff has passed gets the KICKED OFF badge, drops to 55% and stops responding — the first row here shows it. Submitting replaces the whole week, so picks on started games must be re-sent exactly as they were; the UI simply can't change them.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="1b" style="display:flex; gap:28px; align-items:flex-start">
+      <div style="display:flex; flex-direction:column; gap:14px">
+        <div style="display:flex; align-items:center; gap:10px">
+          <div style="font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:700; color:oklch(0.18 0.008 60); background:oklch(0.80 0.16 75); padding:3px 8px; border-radius:5px">1b</div>
+          <div style="font-size:15px; font-weight:600; color:oklch(0.95 0.004 60)">My Picks · bet slip</div>
+        </div>
+        <div style="padding:11px; background:#000; border-radius:52px; box-shadow:0 30px 70px -20px rgba(0,0,0,0.75)">
+          <div style="width:390px; height:812px; border-radius:42px; overflow:hidden; background:oklch(0.145 0.006 60); display:flex; flex-direction:column">
+
+            <div style="flex:0 0 auto; padding:14px 16px 0; display:flex; flex-direction:column; gap:12px; border-bottom:1px solid oklch(0.26 0.008 60)">
+              <div style="display:flex; align-items:center; justify-content:space-between">
+                <div style="font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.16em; color:oklch(0.80 0.16 75); font-weight:700">PICKS GAME</div>
+                <div style="width:26px; height:26px; border-radius:50%; background:oklch(0.30 0.008 60); color:oklch(0.90 0.004 60); font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center">RB</div>
+              </div>
+              <div style="display:flex; gap:4px">
+                <div style="flex:1; text-align:center; padding:8px 0; font-size:12px; font-weight:500; color:oklch(0.68 0.006 60)">Picks</div>
+                <div style="flex:1; text-align:center; padding:8px 0; font-size:12px; font-weight:600; color:oklch(0.18 0.008 60); background:oklch(0.80 0.16 75); border-radius:8px 8px 0 0">{{ slipTab }}</div>
+                <div style="flex:1; text-align:center; padding:8px 0; font-size:12px; font-weight:500; color:oklch(0.68 0.006 60)">Board</div>
+                <div style="flex:1; text-align:center; padding:8px 0; font-size:12px; font-weight:500; color:oklch(0.68 0.006 60)">Queries</div>
+                <div style="flex:1; text-align:center; padding:8px 0; font-size:12px; font-weight:500; color:oklch(0.68 0.006 60)">HOF</div>
+              </div>
+            </div>
+
+            <div style="flex:1 1 auto; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:14px">
+
+              <div style="border:1px solid oklch(0.30 0.008 60); border-radius:12px; overflow:hidden; background:oklch(0.175 0.006 60)">
+                <div style="padding:13px 15px; display:flex; align-items:center; justify-content:space-between; background:oklch(0.21 0.008 60); border-bottom:1px solid oklch(0.30 0.008 60)">
+                  <div style="display:flex; flex-direction:column; gap:2px">
+                    <div style="font-size:15px; font-weight:700; color:oklch(0.96 0.004 60)">Week of Dec 3</div>
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.08em; color:oklch(0.62 0.006 60)">LOCKED · 5 PICKS</div>
+                  </div>
+                  <div style="display:flex; align-items:baseline; gap:3px">
+                    <div style="font-size:26px; font-weight:700; color:oklch(0.72 0.15 150); letter-spacing:-0.02em">2</div>
+                    <div style="font-size:18px; font-weight:600; color:oklch(0.55 0.006 60)">–</div>
+                    <div style="font-size:26px; font-weight:700; color:oklch(0.63 0.18 25); letter-spacing:-0.02em">1</div>
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:10px; color:oklch(0.62 0.006 60); margin-left:5px">1 LIVE · 1 PENDING</div>
+                  </div>
+                </div>
+
+                <sc-for list="{{ slip }}" as="p" hint-placeholder-count="5">
+                  <div style="display:grid; grid-template-columns:4px 58px 1fr auto; align-items:center; gap:11px; padding:11px 15px 11px 0; border-bottom:1px solid oklch(0.24 0.008 60)">
+                    <div style="align-self:stretch; background:{{ p.bar }}"></div>
+                    <div style="display:flex; flex-direction:column; gap:2px">
+                      <div style="font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.1em; color:oklch(0.80 0.16 75)">{{ p.role }}</div>
+                      <div style="font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.06em; color:oklch(0.58 0.006 60)">{{ p.league }}</div>
+                    </div>
+                    <div style="display:flex; flex-direction:column; gap:2px; min-width:0">
+                      <div style="font-size:14px; font-weight:700; color:oklch(0.96 0.004 60); letter-spacing:-0.01em">{{ p.sel }}</div>
+                      <div style="font-size:11.5px; color:oklch(0.64 0.006 60); white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ p.game }}</div>
+                    </div>
+                    <div style="display:flex; flex-direction:column; align-items:flex-end; gap:2px">
+                      <div style="font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:500; color:oklch(0.86 0.004 60)">{{ p.odds }}</div>
+                      <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; font-weight:700; letter-spacing:0.06em; color:{{ p.bar }}">{{ p.status }}</div>
+                    </div>
+                  </div>
+                </sc-for>
+
+                <div style="padding:11px 15px; display:flex; align-items:center; justify-content:space-between">
+                  <div style="font-size:12px; color:oklch(0.62 0.006 60)">Submitted Thu 6:42p</div>
+                  <div style="font-size:12px; font-weight:600; color:oklch(0.80 0.16 75)">Share slip</div>
+                </div>
+              </div>
+
+              <div style="font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.14em; color:oklch(0.58 0.006 60); padding-top:4px">EARLIER WEEKS</div>
+              <sc-for list="{{ history }}" as="h" hint-placeholder-count="3">
+                <div style="border:1px solid oklch(0.28 0.008 60); border-radius:11px; padding:13px 15px; display:flex; align-items:center; justify-content:space-between; background:oklch(0.165 0.006 60)">
+                  <div style="display:flex; flex-direction:column; gap:2px">
+                    <div style="font-size:14px; font-weight:600; color:oklch(0.94 0.004 60)">{{ h.week }}</div>
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:10px; color:oklch(0.60 0.006 60)">{{ h.note }}</div>
+                  </div>
+                  <div style="display:flex; align-items:center; gap:10px">
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:15px; font-weight:700; color:{{ h.fg }}">{{ h.rec }}</div>
+                    <div style="color:oklch(0.50 0.006 60); font-size:15px">›</div>
+                  </div>
+                </div>
+              </sc-for>
+
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="width:330px; display:flex; flex-direction:column; gap:16px; padding-top:44px">
+        <div style="font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.16em; color:oklch(0.80 0.16 75)">BUILD NOTES</div>
+        <div style="display:flex; flex-direction:column; gap:14px">
+          <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:14px 15px; display:flex; flex-direction:column; gap:6px">
+            <div style="font-size:14px; font-weight:700; color:oklch(0.96 0.004 60)">6 · One slip, not eight label/value stacks</div>
+            <div style="font-size:13px; color:oklch(0.72 0.006 60); line-height:1.5; text-wrap:pretty">Today each pick prints Week / Sport / Matchup / Market / Selection / Line / Odds / Status as eight stacked rows — roughly a full screen per pick. Collapse to one 44px row: role tag, selection with line, matchup underneath, odds right-aligned, status as a colored left bar plus a word.</div>
+          </div>
+          <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:14px 15px; display:flex; flex-direction:column; gap:6px">
+            <div style="font-size:14px; font-weight:700; color:oklch(0.96 0.004 60)">7 · Record in the header</div>
+            <div style="font-size:13px; color:oklch(0.72 0.006 60); line-height:1.5; text-wrap:pretty">The weekly W–L plus live and pending counts sit at the top of the slip so the answer to "how did I do" needs no scrolling. Four statuses, each with its own left bar color: WIN green oklch(0.72 0.15 150), LOSS red oklch(0.63 0.18 25), LIVE amber oklch(0.80 0.16 75), PENDING grey oklch(0.55 0.006 60) — a game that hasn't kicked off yet shows its kickoff time where a final score would go. Pushes reuse grey with the word PUSH. W–L counts decided picks only; live and pending are listed separately beside it.</div>
+          </div>
+          <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:14px 15px; display:flex; flex-direction:column; gap:6px">
+            <div style="font-size:14px; font-weight:700; color:oklch(0.96 0.004 60)">8 · Past weeks collapse</div>
+            <div style="font-size:13px; color:oklch(0.72 0.006 60); line-height:1.5; text-wrap:pretty">Prior weeks are one-line summary rows that expand into the same slip. Replaces the week dropdown. Share slip copies a text version for the group chat.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="1c" style="display:flex; gap:28px; align-items:flex-start">
+      <div style="display:flex; flex-direction:column; gap:14px">
+        <div style="display:flex; align-items:center; gap:10px">
+          <div style="font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:700; color:oklch(0.18 0.008 60); background:oklch(0.80 0.16 75); padding:3px 8px; border-radius:5px">1c</div>
+          <div style="font-size:15px; font-weight:600; color:oklch(0.95 0.004 60)">Scoreboard</div>
+        </div>
+        <div style="padding:11px; background:#000; border-radius:52px; box-shadow:0 30px 70px -20px rgba(0,0,0,0.75)">
+          <div style="width:390px; height:812px; border-radius:42px; overflow:hidden; background:oklch(0.145 0.006 60); display:flex; flex-direction:column">
+
+            <div style="flex:0 0 auto; padding:14px 16px 0; display:flex; flex-direction:column; gap:12px; border-bottom:1px solid oklch(0.26 0.008 60)">
+              <div style="display:flex; align-items:center; justify-content:space-between">
+                <div style="font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.16em; color:oklch(0.80 0.16 75); font-weight:700">PICKS GAME</div>
+                <div style="width:26px; height:26px; border-radius:50%; background:oklch(0.30 0.008 60); color:oklch(0.90 0.004 60); font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center">RB</div>
+              </div>
+              <div style="display:flex; gap:4px">
+                <div style="flex:1; text-align:center; padding:8px 0; font-size:12px; font-weight:500; color:oklch(0.68 0.006 60)">Picks</div>
+                <div style="flex:1; text-align:center; padding:8px 0; font-size:12px; font-weight:500; color:oklch(0.68 0.006 60)">{{ slipTab }}</div>
+                <div style="flex:1; text-align:center; padding:8px 0; font-size:12px; font-weight:600; color:oklch(0.18 0.008 60); background:oklch(0.80 0.16 75); border-radius:8px 8px 0 0">Board</div>
+                <div style="flex:1; text-align:center; padding:8px 0; font-size:12px; font-weight:500; color:oklch(0.68 0.006 60)">Queries</div>
+                <div style="flex:1; text-align:center; padding:8px 0; font-size:12px; font-weight:500; color:oklch(0.68 0.006 60)">HOF</div>
+              </div>
+            </div>
+
+            <div style="flex:0 0 auto; padding:12px 16px; display:flex; gap:6px; background:oklch(0.175 0.006 60); border-bottom:1px solid oklch(0.26 0.008 60)">
+              <div onClick="{{ onSeason }}" style="flex:1; text-align:center; padding:8px 0; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; background:{{ seasonBg }}; color:{{ seasonFg }}; border:1px solid oklch(0.30 0.008 60)">Season</div>
+              <div onClick="{{ onWeekly }}" style="flex:1; text-align:center; padding:8px 0; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; background:{{ weeklyBg }}; color:{{ weeklyFg }}; border:1px solid oklch(0.30 0.008 60)">This week</div>
+            </div>
+
+            <div style="flex:1 1 auto; overflow-y:auto">
+              <div style="display:grid; grid-template-columns:26px 1fr 40px 40px 52px; gap:8px; padding:8px 16px; border-bottom:1px solid oklch(0.26 0.008 60)">
+                <div style="font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.1em; color:oklch(0.58 0.006 60)">#</div>
+                <div style="font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.1em; color:oklch(0.58 0.006 60)">PLAYER</div>
+                <div style="font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.1em; color:oklch(0.58 0.006 60); text-align:right">W</div>
+                <div style="font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.1em; color:oklch(0.58 0.006 60); text-align:right">L</div>
+                <div style="font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.1em; color:oklch(0.58 0.006 60); text-align:right">PCT</div>
+              </div>
+              <sc-for list="{{ board }}" as="b" hint-placeholder-count="9">
+                <div style="display:grid; grid-template-columns:26px 1fr 40px 40px 52px; gap:8px; align-items:center; padding:11px 16px; border-bottom:1px solid oklch(0.22 0.008 60); background:{{ b.rowBg }}">
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:700; color:{{ b.rankFg }}">{{ b.rank }}</div>
+                  <div style="display:flex; flex-direction:column; gap:3px; min-width:0">
+                    <div style="display:flex; align-items:center; gap:6px">
+                      <div style="font-size:14.5px; font-weight:600; color:oklch(0.96 0.004 60); white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ b.name }}</div>
+                      <div style="font-family:'JetBrains Mono',monospace; font-size:9px; color:{{ b.trendFg }}">{{ b.trend }}</div>
+                    </div>
+                    <div style="height:3px; border-radius:2px; background:oklch(0.28 0.008 60); overflow:hidden">
+                      <div style="height:3px; border-radius:2px; background:{{ b.barFg }}; width:{{ b.barW }}"></div>
+                    </div>
+                  </div>
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:14px; text-align:right; color:oklch(0.92 0.004 60)">{{ b.w }}</div>
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:14px; text-align:right; color:oklch(0.70 0.006 60)">{{ b.l }}</div>
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:700; text-align:right; color:{{ b.pctFg }}">{{ b.pct }}</div>
+                </div>
+              </sc-for>
+              <div style="padding:16px; display:flex; flex-direction:column; gap:10px">
+                <div style="font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.14em; color:oklch(0.58 0.006 60)">{{ footLabel }}</div>
+                <div style="font-size:13px; color:oklch(0.70 0.006 60); line-height:1.5">{{ footNote }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="width:330px; display:flex; flex-direction:column; gap:16px; padding-top:44px">
+        <div style="font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.16em; color:oklch(0.80 0.16 75)">BUILD NOTES</div>
+        <div style="display:flex; flex-direction:column; gap:14px">
+          <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:14px 15px; display:flex; flex-direction:column; gap:6px">
+            <div style="font-size:14px; font-weight:700; color:oklch(0.96 0.004 60)">9 · Five columns, not six</div>
+            <div style="font-size:13px; color:oklch(0.72 0.006 60); line-height:1.5; text-wrap:pretty">Rank, player, W, L, Pct. Weeks and Pushes come out of the table — pushes are rare and belong in the expanded row. Numbers are monospace so columns line up on a 390px screen; rank and Pct carry the weight.</div>
+          </div>
+          <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:14px 15px; display:flex; flex-direction:column; gap:6px">
+            <div style="font-size:14px; font-weight:700; color:oklch(0.96 0.004 60)">10 · Season / This week toggle</div>
+            <div style="font-size:13px; color:oklch(0.72 0.006 60); line-height:1.5; text-wrap:pretty">Two segments replace the two separate tables and the dropdowns. This week shows the same columns for the current week, with the leader flagged. Tap the toggle in this mockup — it works.</div>
+          </div>
+          <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:14px 15px; display:flex; flex-direction:column; gap:6px">
+            <div style="font-size:14px; font-weight:700; color:oklch(0.96 0.004 60)">11 · Leader gets one amber row</div>
+            <div style="font-size:13px; color:oklch(0.72 0.006 60); line-height:1.5; text-wrap:pretty">Rank 1 gets a faint amber tint and amber rank number instead of a trophy emoji — save trophies for Hall of Fame, where they earn their keep. The thin bar under each name is win rate, so the standings read at a glance.</div>
+          </div>
+          <div style="background:oklch(0.175 0.006 60); border:1px solid oklch(0.28 0.008 60); border-radius:10px; padding:14px 15px; display:flex; flex-direction:column; gap:6px">
+            <div style="font-size:14px; font-weight:700; color:oklch(0.96 0.004 60)">12 · Not drawn yet</div>
+            <div style="font-size:13px; color:oklch(0.72 0.006 60); line-height:1.5; text-wrap:pretty">Queries and Hall of Fame. Queries needs full-width bar and line charts, which is a different layout problem — worth its own round. Hall of Fame keeps the per-champion trophy treatment you already like.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:2560,&quot;height&quot;:1200},&quot;slipTab&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;My Slip&quot;,&quot;Slip&quot;,&quot;My Card&quot;,&quot;My Week&quot;,&quot;Mine&quot;],&quot;default&quot;:&quot;My Slip&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Copy&quot;}}">
+class Component extends DCLogic {
+  state = { picks: [], q: "", sport: "ALL", sort: 0, submitted: false, boardMode: "season",
+    qView: "players", qWho: "All players", qRange: "2025-26" };
+
+  VIEWS = [
+    { v:"players", label:"Win % by player", m:"Win %", s:"Player", desc:true },
+    { v:"markets", label:"Win % by market", m:"Win %", s:"Market", desc:true },
+    { v:"units", label:"Units by market", m:"Units", s:"Market", desc:true },
+    { v:"leagues", label:"NFL vs college", m:"Win %", s:"League", desc:true },
+    { v:"weeks", label:"Win % by week", m:"Win %", s:"Week", desc:true },
+    { v:"cum", label:"Cumulative units", m:"Units", s:"Week", desc:true, cum:true },
+    { v:"teamsW", label:"Best teams", m:"Win %", s:"Team", desc:true },
+    { v:"teamsL", label:"Worst teams", m:"Win %", s:"Team", desc:false }
+  ];
+  RANGES = ["2025-26", "2024-25"];
+
+  qData = {
+    Player: [
+      { label:"Whit Payne", picks:70, pct:0.586, u:6.4 },
+      { label:"Ivan", picks:65, pct:0.554, u:3.1 },
+      { label:"Jah", picks:70, pct:0.543, u:1.8 },
+      { label:"Ben", picks:65, pct:0.523, u:-0.4 },
+      { label:"Grant Brooks", picks:70, pct:0.514, u:-1.2 },
+      { label:"Reid Basu", picks:65, pct:0.508, u:-2.0 },
+      { label:"Clarke Wood", picks:70, pct:0.500, u:-3.3 },
+      { label:"Rish Basu", picks:69, pct:0.493, u:-4.1 },
+      { label:"Miles O.", picks:64, pct:0.469, u:-6.2 }
+    ],
+    Market: [
+      { label:"Moneyline", picks:109, pct:0.587, u:1.2 },
+      { label:"Favorite", picks:152, pct:0.559, u:2.4 },
+      { label:"Over", picks:152, pct:0.533, u:0.8 },
+      { label:"Under", picks:152, pct:0.514, u:-1.5 },
+      { label:"Underdog", picks:152, pct:0.487, u:-3.6 }
+    ],
+    Team: [
+      { label:"Buffalo Bills", picks:11, pct:0.818, u:4.89 },
+      { label:"Georgia Bulldogs", picks:12, pct:0.667, u:2.10 },
+      { label:"Ohio State", picks:10, pct:0.600, u:1.35 },
+      { label:"Kansas City Chiefs", picks:14, pct:0.571, u:0.42 },
+      { label:"Oregon Ducks", picks:9, pct:0.556, u:0.18 },
+      { label:"Dallas Cowboys", picks:13, pct:0.462, u:-2.05 },
+      { label:"USC Trojans", picks:8, pct:0.375, u:-3.40 },
+      { label:"NY Jets", picks:9, pct:0.333, u:-4.15 }
+    ],
+    League: [
+      { label:"NFL", picks:304, pct:0.541, u:2.20 },
+      { label:"NCAAF", picks:241, pct:0.508, u:-4.90 }
+    ],
+    Week: [
+      { label:"W1", picks:45, pct:0.511, u:-0.70 }, { label:"W2", picks:45, pct:0.578, u:2.10 },
+      { label:"W3", picks:45, pct:0.467, u:-2.40 }, { label:"W4", picks:45, pct:0.600, u:3.05 },
+      { label:"W5", picks:45, pct:0.533, u:0.60 }, { label:"W6", picks:45, pct:0.489, u:-1.30 },
+      { label:"W7", picks:45, pct:0.622, u:3.80 }, { label:"W8", picks:45, pct:0.556, u:1.10 }
+    ]
+  };
+
+  qWeekByPlayer = {
+    "Whit Payne": [0.6, 0.8, 0.4, 0.6, 1.0, 0.6, 0.8, 0.6],
+    "Ivan": [0.4, 0.6, 0.6, 0.8, 0.6, 1.0, 0.6, 0.8]
+  };
+
+  metricVal(b, m) {
+    if (m === "Win %") return b.pct * 100;
+    if (m === "Units") return b.u;
+    if (m === "Wins") return Math.round(b.picks * b.pct);
+    return b.picks;
+  }
+
+  fmtVal(v, m) {
+    if (m === "Win %") return v.toFixed(1) + "%";
+    if (m === "Units") return (v > 0 ? "+" : "") + v.toFixed(2) + "u";
+    return String(Math.round(v));
+  }
+
+  buildQuery() {
+    const C = this.C, st = this.state;
+    const view = this.VIEWS.filter(v => v.v === st.qView)[0] || this.VIEWS[0];
+    const m = view.m, split = view.s, desc = view.desc;
+    const isLine = split === "Week";
+    let src = this.qData[split];
+    if (isLine && this.qWeekByPlayer[st.qWho]) {
+      src = src.map((b, i) => ({ ...b, picks: 5, pct: this.qWeekByPlayer[st.qWho][i] }));
+    }
+    let rows = src.map(b => ({ label: b.label, v: this.metricVal(b, m) }));
+    if (view.cum) {
+      let run = 0;
+      rows = rows.map(r => { run += r.v; return { label: r.label, v: Math.round(run * 100) / 100 }; });
+    }
+    if (!isLine) rows = rows.slice().sort((a, b) => desc ? b.v - a.v : a.v - b.v);
+    const vals = rows.map(r => r.v);
+    const max = Math.max.apply(null, vals) || 1;
+    const min = Math.min.apply(null, vals);
+    const scale = Math.max(Math.abs(max), Math.abs(min)) || 1;
+
+    const hasNeg = min < 0;
+    const bars = rows.map((r, i) => {
+      const neg = r.v < 0;
+      const lead = i === 0 && desc;
+      const mag = hasNeg
+        ? Math.max(1, Math.round((Math.abs(r.v) / scale) * 50))
+        : Math.max(2, Math.round((r.v / max) * 100));
+      return {
+        label: r.label,
+        val: this.fmtVal(r.v, m),
+        w: mag + "%",
+        left: hasNeg ? (neg ? (50 - mag) + "%" : "50%") : "0%",
+        vH: mag + "%",
+        vBottom: hasNeg ? (neg ? "auto" : "50%") : "0%",
+        vTop: hasNeg && neg ? "50%" : "auto",
+        fg: neg ? "oklch(0.52 0.13 25)" : (lead ? C.amber : "oklch(0.42 0.02 75)"),
+        valFg: neg ? C.loss : (lead ? C.amber : "oklch(0.90 0.004 60)")
+      };
+    });
+
+    const W = 700, H = 240, PL = 44, PR = 12, PT = 14, PB = 26;
+    const n = rows.length || 1;
+    const lo = m === "Win %" ? 30 : Math.min(0, min * 1.2), hi = m === "Win %" ? 105 : max * 1.2;
+    const x = i => PL + (i * (W - PL - PR)) / Math.max(1, n - 1);
+    const y = v => PT + (H - PT - PB) * (1 - (v - lo) / (hi - lo));
+    const pts = rows.map((r, i) => ({ cx: x(i), cy: y(r.v), label: r.label, val: this.fmtVal(r.v, m) }));
+    const grid = (m === "Win %" ? [40, 50, 60, 70, 80, 90, 100]
+      : (m === "Units" ? [Math.min(0, min).toFixed(0) * 1, 0, max] : [0, max * 0.5, max]))
+      .map(g => ({ y: y(g), label: m === "Win %" ? g + "%" : (m === "Units" ? g.toFixed(1) + "u" : Math.round(g)),
+        major: (m === "Win %" && g === 50) || (m === "Units" && g === 0) }));
+
+    return {
+      views: this.VIEWS.map(v => ({ v: v.v, label: v.label })), ranges: this.RANGES,
+      whoList: ["All players"].concat(this.qData.Player.map(p => p.label)),
+      qView: st.qView, qWho: st.qWho, qRange: st.qRange,
+      onView: e => this.setState({ qView: e.target.value }),
+      onWho: e => this.setState({ qWho: e.target.value }),
+      onRange: e => this.setState({ qRange: e.target.value }),
+      isLine, isBars: !isLine, bars, pts, grid, hasNeg,
+      zeroLine: hasNeg ? "block" : "none",
+      ranked: rows.slice().sort((a, b) => b.v - a.v).map((r, i) => ({
+        rank: i + 1, label: r.label, val: this.fmtVal(r.v, m),
+        rankFg: i === 0 ? C.amber : "oklch(0.55 0.006 60)",
+        valFg: i === 0 ? C.amber : "oklch(0.92 0.004 60)"
+      })),
+      takeaway: isLine
+        ? "Week 7 is the high mark at " + this.fmtVal(rows.reduce((a, b) => (b.v > a.v ? b : a), rows[0]).v, m) + ". Nobody has strung together more than three winning weeks."
+        : rows[0].label + " leads at " + this.fmtVal(rows[0].v, m) + ", " + this.fmtVal(rows[0].v - rows[rows.length - 1].v, m).replace("%", " points") + " clear of " + rows[rows.length - 1].label.replace(/\.$/, ""),
+      linePath: pts.map((p, i) => (i ? "L" : "M") + p.cx.toFixed(1) + " " + p.cy.toFixed(1)).join(" "),
+      chartW: W, chartH: H, axisX: PL, axisY: H - PB,
+      readout: "qView=" + view.v + " · " + (st.qWho === "All players" ? "all players" : st.qWho) + " · season " + st.qRange,
+      caption: isLine
+        ? (view.cum ? "Running total of units through the season. Zero is the heavy line." : "Each point is one week. The dashed line is 50%.")
+        : "Sorted " + (desc ? "high to low" : "low to high") + ". " + (desc ? "Leader" : "Worst") + " in amber.",
+      bigTitle: view.label,
+      bigSub: "Season " + st.qRange + " · " + (st.qWho === "All players" ? "all 9 players" : st.qWho),
+      showFifty: m === "Win %" && !isLine
+    };
+  }
+
+  games = [
+    { id:"g1", lg:"NFL", time:"THU 8:15P", started:true, away:{a:"BAL",n:"Ravens",rec:"8-4"}, home:{a:"CIN",n:"Bengals",rec:"6-6"}, sp:-3.5, spOdds:[-110,-106], tot:44.5, totOdds:[-110,-110], ml:[-180,150], favSide:"away" },
+    { id:"g2", lg:"NFL", time:"4:25P", away:{a:"KC",n:"Chiefs",rec:"10-2"}, home:{a:"DEN",n:"Broncos",rec:"7-5"}, sp:-6.5, spOdds:[-108,-112], tot:41.5, totOdds:[-105,-115], ml:[-270,215], favSide:"away" },
+    { id:"g3", lg:"CFB", time:"12:00P", away:{a:"MICH",n:"Michigan",rec:"9-3"}, home:{a:"OSU",n:"Ohio State",rec:"11-1"}, sp:-13.5, spOdds:[-110,-110], tot:45.5, totOdds:[-110,-110], ml:[430,-600], favSide:"home" },
+    { id:"g4", lg:"CFB", time:"3:30P", away:{a:"UGA",n:"Georgia",rec:"10-2"}, home:{a:"BAMA",n:"Alabama",rec:"10-2"}, sp:-1.5, spOdds:[-112,-108], tot:51.5, totOdds:[-110,-110], ml:[105,-125], favSide:"home" },
+    { id:"g5", lg:"CFB", time:"7:00P", away:{a:"LSU",n:"LSU",rec:"8-4"}, home:{a:"TENN",n:"Tennessee",rec:"9-3"}, sp:-2.5, spOdds:[-115,-105], tot:57.5, totOdds:[-108,-112], ml:[118,-140], favSide:"home" },
+    { id:"g6", lg:"CFB", time:"7:30P", away:{a:"ORE",n:"Oregon",rec:"11-1"}, home:{a:"USC",n:"USC",rec:"7-5"}, sp:-4.5, spOdds:[-110,-110], tot:61.5, totOdds:[-110,-110], ml:[-195,160], favSide:"away" },
+    { id:"g7", lg:"NFL", time:"8:20P", away:{a:"DAL",n:"Cowboys",rec:"7-5"}, home:{a:"PHI",n:"Eagles",rec:"10-2"}, sp:-7, spOdds:[-110,-110], tot:48.5, totOdds:[-112,-108], ml:[255,-320], favSide:"home" },
+    { id:"g8", lg:"NFL", time:"1:00P", away:{a:"SF",n:"49ers",rec:"9-3"}, home:{a:"SEA",n:"Seahawks",rec:"8-4"}, sp:-2.5, spOdds:[-106,-114], tot:43.5, totOdds:[-110,-110], ml:[-135,114], favSide:"away" }
+  ];
+
+  C = {
+    amber:"oklch(0.80 0.16 75)", amberDim:"oklch(0.80 0.16 75 / 0.14)",
+    ink:"oklch(0.18 0.008 60)", txt:"oklch(0.96 0.004 60)", dim:"oklch(0.62 0.006 60)",
+    cell:"oklch(0.225 0.008 60)", bd:"oklch(0.31 0.008 60)",
+    win:"oklch(0.72 0.15 150)", loss:"oklch(0.63 0.18 25)", pend:"oklch(0.55 0.006 60)"
+  };
+
+  sorts = ["KICKOFF ↑", "BIG SPREAD", "CLOSE LINE"];
+  odds = (n) => (n > 0 ? "+" + n : "" + n);
+
+  used() {
+    const r = {}; let nfl = 0, cfb = 0;
+    this.state.picks.forEach(p => {
+      r[p.role] = p;
+      if (p.role !== "ml") { if (p.lg === "NFL") nfl++; else cfb++; }
+    });
+    return { r, nfl, cfb };
+  }
+
+  tap(pick, legal, isSel) {
+    if (this.state.submitted) return;
+    if (isSel) { this.setState(s => ({ picks: s.picks.filter(p => p.key !== pick.key) })); return; }
+    if (!legal) return;
+    this.setState(s => ({ picks: s.picks.filter(p => p.role !== pick.role).concat([pick]) }));
+  }
+
+  cellFor(g, side, mkt) {
+    const C = this.C, isAway = side === "away", t = isAway ? g.away : g.home;
+    let role, main, oddsTxt, line;
+    if (mkt === "spread") {
+      const fav = g.favSide === side;
+      role = fav ? "fav" : "dog";
+      line = fav ? g.sp : -g.sp;
+      main = (line > 0 ? "+" : "") + line;
+      oddsTxt = this.odds(g.spOdds[isAway ? 0 : 1]);
+    } else if (mkt === "total") {
+      role = isAway ? "over" : "under";
+      line = g.tot;
+      main = (isAway ? "O " : "U ") + g.tot;
+      oddsTxt = this.odds(g.totOdds[isAway ? 0 : 1]);
+    } else {
+      role = "ml"; line = g.ml[isAway ? 0 : 1];
+      main = this.odds(line); oddsTxt = line > -200 ? "ML" : "TOO SHORT";
+    }
+    const key = g.id + mkt + side;
+    const sel = this.state.picks.some(p => p.key === key);
+    const u = this.used();
+    let legal;
+    if (g.started) legal = false;
+    else if (mkt === "ml") legal = !u.r.ml && line > -200;
+    else legal = !u.r[role] && (g.lg === "NFL" ? u.nfl < 2 : u.cfb < 2);
+    const pick = { key, role, lg: g.lg, gid: g.id, team: t.a, teamName: t.n,
+      matchup: g.away.a + " @ " + g.home.a, main, oddsTxt: mkt === "ml" ? this.odds(line) : oddsTxt, mkt };
+    return {
+      main, odds: oddsTxt,
+      bg: sel ? C.amber : C.cell,
+      fg: sel ? C.ink : C.txt,
+      sub: sel ? "oklch(0.18 0.008 60 / 0.7)" : C.dim,
+      bd: sel ? C.amber : C.bd,
+      op: sel ? 1 : (legal ? 1 : 0.28),
+      on: () => this.tap(pick, legal, sel)
+    };
+  }
+
+  renderVals() {
+    const C = this.C, st = this.state, u = this.used();
+    const q = st.q.trim().toLowerCase();
+    let gs = this.games.filter(g =>
+      (st.sport === "ALL" || g.lg === st.sport) &&
+      (!q || [g.away.a, g.away.n, g.home.a, g.home.n].some(x => x.toLowerCase().includes(q)))
+    );
+    if (st.sort === 1) gs = gs.slice().sort((a, b) => Math.abs(b.sp) - Math.abs(a.sp));
+    if (st.sort === 2) gs = gs.slice().sort((a, b) => Math.abs(a.sp) - Math.abs(b.sp));
+
+    const games = gs.map(g => ({
+      league: g.lg, time: g.time,
+      note: g.away.n + " @ " + g.home.n,
+      lockShow: g.started ? "block" : "none",
+      rowOp: g.started ? 0.55 : 1,
+      tagFg: g.lg === "NFL" ? C.ink : "oklch(0.92 0.004 60)",
+      tagBg: g.lg === "NFL" ? C.amber : "oklch(0.32 0.008 60)",
+      rows: ["away", "home"].map(side => {
+        const sp = this.cellFor(g, side, "spread"), to = this.cellFor(g, side, "total"), ml = this.cellFor(g, side, "ml");
+        return { abbr: g[side].a, name: g[side].n, rec: g[side].rec, spread: sp, total: to, ml, cells: [sp, to, ml] };
+      })
+    }));
+
+    const slotDefs = [["fav","FAV"],["dog","DOG"],["over","OVER"],["under","UNDER"],["ml","ML"]];
+    const slots = slotDefs.map(([role, label]) => {
+      const p = u.r[role];
+      return {
+        role: label,
+        pick: p ? p.team : "—",
+        sub: p ? (role === "ml" ? p.oddsTxt : p.main) : (role === "ml" ? "> -200" : "tap"),
+        bg: p ? C.amberDim : "oklch(0.235 0.008 60)",
+        bd: p ? C.amber : "oklch(0.36 0.008 60)",
+        fg: p ? C.txt : "oklch(0.52 0.006 60)",
+        roleFg: p ? C.amber : "oklch(0.60 0.006 60)",
+        subFg: p ? "oklch(0.72 0.006 60)" : "oklch(0.46 0.006 60)",
+        on: () => p && this.setState(s => ({ picks: s.picks.filter(x => x.role !== role) }))
+      };
+    });
+
+    const full = st.picks.length === 5;
+    const sportTabs = ["ALL","NFL","CFB"].map(s => ({
+      label: s === "ALL" ? "All" : s,
+      bg: st.sport === s ? C.amber : "transparent",
+      fg: st.sport === s ? C.ink : "oklch(0.80 0.006 60)",
+      on: () => this.setState({ sport: s })
+    }));
+
+    const slip = [
+      { role:"FAV", league:"NFL", sel:"Ravens -3.5", game:"Baltimore Ravens @ Cincinnati Bengals · Final 27-17", line:"-3.5", odds:"-110", status:"WIN", bar:C.win },
+      { role:"DOG", league:"NFL", sel:"Cowboys +7", game:"Dallas Cowboys @ Philadelphia Eagles · Final 21-31", line:"+7", odds:"-110", status:"LOSS", bar:C.loss },
+      { role:"OVER", league:"CFB", sel:"Over 51.5", game:"Georgia Bulldogs @ Alabama Crimson Tide · Final 34-31", line:"51.5", odds:"-110", status:"WIN", bar:C.win },
+      { role:"UNDER", league:"CFB", sel:"Under 45.5", game:"Michigan Wolverines @ Ohio State Buckeyes · Q3 10-14", line:"45.5", odds:"-110", status:"LIVE", bar:C.amber },
+      { role:"ML", league:"CFB", sel:"Tennessee ML", game:"LSU Tigers @ Tennessee Volunteers · Sun 7:00p", line:"—", odds:"-140", status:"PENDING", bar:C.pend }
+    ];
+
+    const history = [
+      { week:"Week of Nov 26", note:"4 WINS · 1 LOSS", rec:"4-1", fg:C.win },
+      { week:"Week of Nov 19", note:"2 WINS · 3 LOSSES", rec:"2-3", fg:C.loss },
+      { week:"Week of Nov 12", note:"3 WINS · 2 LOSSES", rec:"3-2", fg:C.win }
+    ];
+
+    const season = [
+      ["Whit Payne",41,29,6,0],["Jah",38,32,3,0],["Ivan",36,29,4,0],["Grant Brooks",36,34,4,0],
+      ["Clarke Wood",35,35,3,0],["Ben",34,31,5,0],["Rish Basu",34,35,4,1],["Reid Basu",33,32,3,0],["Miles O.",30,34,3,0]
+    ].sort((a, b) => b[1] - a[1] || (b[1] / (b[1] + b[2])) - (a[1] / (a[1] + a[2])));
+    const weekly = [
+      ["Ivan",5,0,1,0],["Whit Payne",4,1,1,0],["Reid Basu",3,2,1,0],["Jah",3,2,1,0],
+      ["Ben",3,2,1,0],["Clarke Wood",2,3,1,0],["Grant Brooks",2,3,1,0],["Rish Basu",1,4,1,0],["Miles O.",1,4,1,0]
+    ];
+    const rows = st.boardMode === "season" ? season : weekly;
+    const maxWk = Math.max.apply(null, season.map(r => r[3]));
+    const seasonRows = season.map(([name, w, l, wk, p], i) => ({
+      rank: i + 1, name, w, l, wk, p, pend: 5,
+      trophyShow: wk === maxWk ? "block" : "none",
+      wkFg: wk === maxWk ? C.amber : "oklch(0.90 0.004 60)",
+      pct: (w / (w + l)).toFixed(3).replace("0.", "."),
+      rowBg: i === 0 ? "oklch(0.80 0.16 75 / 0.07)" : "transparent",
+      rankFg: i === 0 ? C.amber : "oklch(0.55 0.006 60)",
+      pctFg: i === 0 ? C.amber : "oklch(0.94 0.004 60)",
+      barFg: i === 0 ? C.amber : "oklch(0.45 0.006 60)",
+      barW: Math.round((w / (w + l)) * 100) + "%"
+    }));
+    const weekRows = weekly.map(([name, w, l], i) => ({
+      rank: i + 1, name, rec: w + "-" + l,
+      fg: i === 0 ? C.amber : "oklch(0.92 0.004 60)",
+      rankFg: i === 0 ? C.amber : "oklch(0.55 0.006 60)",
+      rowBg: i === 0 ? "oklch(0.80 0.16 75 / 0.07)" : "transparent",
+      live: i < 5 ? "1 live" : "final"
+    }));
+    const board = rows.map(([name, w, l], i) => {
+      const pct = w / (w + l);
+      return {
+        rank: i + 1, name, w, l,
+        pct: pct.toFixed(3).replace("0.", "."),
+        rowBg: i === 0 ? "oklch(0.80 0.16 75 / 0.07)" : "transparent",
+        rankFg: i === 0 ? C.amber : "oklch(0.55 0.006 60)",
+        pctFg: i === 0 ? C.amber : "oklch(0.94 0.004 60)",
+        barFg: i === 0 ? C.amber : "oklch(0.45 0.006 60)",
+        barW: Math.round(pct * 100) + "%",
+        trend: i % 3 === 0 ? "▲" : (i % 3 === 1 ? "▼" : "—"),
+        trendFg: i % 3 === 0 ? C.win : (i % 3 === 1 ? C.loss : "oklch(0.50 0.006 60)")
+      };
+    });
+
+    const cmpWeeks = ["W1","W2","W3","W4","W5","W6","W7","W8"];
+    const BW = 900, BH = 300, BPL = 52, BPR = 18, BPT = 18, BPB = 34;
+    const bx = i => BPL + (i * (BW - BPL - BPR)) / (cmpWeeks.length - 1);
+    const by = v => BPT + (BH - BPT - BPB) * (1 - (v * 100 - 30) / 75);
+    const series = ["Whit Payne", "Ivan"].map((nm, si) => {
+      const arr = this.qWeekByPlayer[nm];
+      const pts = arr.map((v, i) => ({ cx: bx(i), cy: by(v), val: Math.round(v * 100) + "%" }));
+      return {
+        name: nm,
+        color: si === 0 ? C.amber : "oklch(0.90 0.004 60)",
+        path: pts.map((p, i) => (i ? "L" : "M") + p.cx.toFixed(1) + " " + p.cy.toFixed(1)).join(" "),
+        pts
+      };
+    });
+    const bigGrid = [40,50,60,70,80,90,100].map(g => ({ y: by(g / 100), label: g + "%", major: g === 50 }));
+    const bigTicks = cmpWeeks.map((w, i) => ({ x: bx(i), label: w }));
+
+    const slipTab = this.props.slipTab ?? "My Slip";
+    const TROPHY = "https://quinton4mvp.com/trophy-gold-transparent-background-19.webp";
+    const champs = [
+      { year:"2024–2025", name:"Ivan", rec:"142-118", pct:".546", note:"Won the last three weeks" },
+      { year:"2023–2024", name:"Clarke Wood", rec:"139-121", pct:".535", note:"Undefeated bowl week" },
+      { year:"2022–2023", name:"Grant Brooks", rec:"136-124", pct:".523", note:"First title of the game" }
+    ];
+    const titles = [
+      { name:"Grant Brooks", n:1 }, { name:"Clarke Wood", n:1 },
+      { name:"Ivan", n:1 }, { name:"Whit Payne", n:1 }
+    ];
+
+    return {
+      games, slots, sportTabs, slip, history, board,
+      trophy: TROPHY, champs, titles, slipTab, seasonRows, weekRows,
+      ...this.buildQuery(),
+      series, bigGrid, bigTicks, bigW: BW, bigH: BH, bigAxisX: BPL, bigAxisY: BH - BPB,
+      q: st.q, submitted: st.submitted,
+      sortLabel: this.sorts[st.sort],
+      countLabel: st.picks.length + " OF 5",
+      tally: "NFL " + u.nfl + "/2 · CFB " + u.cfb + "/2",
+      tallyFg: u.nfl === 2 && u.cfb === 2 ? C.amber : "oklch(0.62 0.006 60)",
+      submitBg: full ? C.amber : "oklch(0.24 0.008 60)",
+      submitFg: full ? C.ink : "oklch(0.50 0.006 60)",
+      submitLabel: full ? "Submit 5 picks" : "Fill all 5 slots",
+      onQuery: (e) => this.setState({ q: e.target.value }),
+      onSort: () => this.setState(s => ({ sort: (s.sort + 1) % 3 })),
+      onSubmit: () => full && this.setState({ submitted: true }),
+      onReset: () => this.setState({ submitted: false, picks: [] }),
+      onSeason: () => this.setState({ boardMode: "season" }),
+      onWeekly: () => this.setState({ boardMode: "weekly" }),
+      seasonBg: st.boardMode === "season" ? C.amber : "transparent",
+      seasonFg: st.boardMode === "season" ? C.ink : "oklch(0.80 0.006 60)",
+      weeklyBg: st.boardMode === "weekly" ? C.amber : "transparent",
+      weeklyFg: st.boardMode === "weekly" ? C.ink : "oklch(0.80 0.006 60)",
+      footLabel: st.boardMode === "season" ? "SEASON TO DATE" : "WEEK OF DEC 3",
+      footNote: st.boardMode === "season"
+        ? "Pct is wins over decided picks. Pushes are excluded from the denominator and shown in the expanded row."
+        : "Weekly winner takes the week. Ties split. Five of nine players still have live picks."
+    };
+  }
+}
+</script>
+</body>
+</html>
