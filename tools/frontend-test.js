@@ -86,7 +86,7 @@ function harness(apiResponses) {
 
   const exported = "return { SEASON, apiUrl, loadSeasons, buildQueries, renderQuery,"
     + " drawBars, esc, pctText, recText, unitText, Q, gameStarted, state, renderGames,"
-    + " togglePick, renderPicks, validateRules, cellBlocked, shortName, sayWhy,"
+    + " togglePick, renderPicks, validateRules, cellBlocked, shortName, briefMatchup, sayWhy,"
     + " boot: document._boot };";
 
   const fn = new Function(
@@ -468,21 +468,27 @@ function run4() {
 
     section("the slip carries what the server needs");
     {
-      const g = { id:"gs", league:"NCAAF", kickoff:soon,
-        home_team:"Georgia Bulldogs", away_team:"Alabama Crimson Tide",
+      /* Deliberately an NFL game. shortName only rewrites NFL names, so an
+         abbreviation leaking into `selection` is detectable only on a team the
+         map actually changes - a college name passes through untouched and the
+         assertion would prove nothing. */
+      const g = { id:"gs", league:"NFL", kickoff:soon,
+        home_team:"Buffalo Bills", away_team:"Kansas City Chiefs",
         spread:{ fav:"home", line:-7.5, favPrice:-115, dogPrice:-105 },
         totals:{ total:52.5, overPrice:-110, underPrice:-110 },
         moneyline:{ home:-300, away:250 } };
       h.api.state.games = [g]; h.api.state.gamesAll = [g]; h.api.state.picks = [];
-      h.api.togglePick(g, "spread", "underdog", "Alabama Crimson Tide", { line:7.5, price:-105 }, -105);
+      h.api.togglePick(g, "spread", "underdog", "Kansas City Chiefs", { line:7.5, price:-105 }, -105);
 
       const p = h.api.state.picks[0];
-      ok(p.matchup === "Alabama Crimson Tide @ Georgia Bulldogs",
+      ok(p.matchup === "Kansas City Chiefs @ Buffalo Bills",
          "matchup is away @ home - the only record of which side was home", p.matchup);
-      ok(p.selection === "Alabama Crimson Tide",
+      ok(p.selection === "Kansas City Chiefs",
          "selection is the feed's exact string, not an abbreviation", p.selection);
+      ok(h.api.shortName("Kansas City Chiefs") === "Chiefs",
+         "and shortName really would have changed it", h.api.shortName("Kansas City Chiefs"));
       ok(p.gameId === "gs", "gameId round-trips - it is what grading joins on");
-      ok(p.league === "NCAAF", "league is uppercased");
+      ok(p.league === "NFL", "league is uppercased");
       ok(p.meta.line === 7.5, "the line is frozen at pick time", p.meta.line);
       ok(/^\d{4}-\d{2}-\d{2}$/.test(p.week), "week is a plain date", p.week);
       ok(p.kickoff === soon, "kickoff travels with it for the server's lock");
@@ -518,6 +524,30 @@ function run4() {
       ok(/min-width:0/.test(rowCss), "and the text column may shrink below its content");
       ok(/text-overflow:ellipsis/.test(rowCss), "so long values ellipsis");
       ok(/white-space:nowrap/.test(rowCss), "rather than wrapping a word at a time");
+    }
+
+    section("team names are not truncated in JavaScript");
+    {
+      /* The bug: names were cut to 15 characters before CSS ever saw the
+         column, so "Virginia Cavaliers" arrived pre-shortened onto a 700px-wide
+         desktop column. Only CSS knows the width. */
+      const long = "Jacksonville State Gamecocks";
+      ok(h.api.shortName(long) === long, "a long college name passes through whole",
+         h.api.shortName(long));
+      ok(h.api.shortName("Kansas City Chiefs") === "Chiefs",
+         "while the NFL map still shortens, because that is a real name");
+      const css = HTML.match(/<style>([\s\S]*?)<\/style>/)[1];
+      ok(/text-overflow:ellipsis/.test(css.slice(css.indexOf(".team .abbr"), css.indexOf(".team .abbr") + 160)),
+         "and the column ellipsises at whatever width it actually has");
+
+      /* A slot barely wider than a thumb ships both forms and lets CSS pick. */
+      ok(h.api.briefMatchup("San Jose State Spartans @ USC Trojans") === "USC Trojans",
+         "a narrow slot falls back to the shorter team name",
+         h.api.briefMatchup("San Jose State Spartans @ USC Trojans"));
+      ok(h.api.briefMatchup("Kansas City Chiefs @ Buffalo Bills") === "Bills",
+         "with the NFL map applied first", h.api.briefMatchup("Kansas City Chiefs @ Buffalo Bills"));
+      ok(h.api.briefMatchup("no separator here") === "no separator here",
+         "and an unparseable matchup is left alone");
     }
 
     section("a slot names the game, and the moneyline price is printed once");

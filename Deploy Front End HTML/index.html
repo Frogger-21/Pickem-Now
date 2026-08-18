@@ -164,6 +164,8 @@
     .slot .pick{font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;
                 text-overflow:ellipsis;max-width:100%}
     .slot .sub{font-family:var(--mono);font-size:9px;color:var(--dim)}
+    .slot .wide{display:none}
+    .slot .narrow{display:inline}
     .slot.filled{border-style:solid;border-color:var(--accent-dim);
                  background:oklch(0.80 0.16 75 / .08);cursor:pointer}
     .slot.filled .role{color:var(--accent-dim)}
@@ -292,6 +294,8 @@
       .slot{flex-direction:row;justify-content:flex-start;text-align:left;gap:10px;
             padding:9px 11px;min-height:46px}
       .slot .pick{flex:1;text-align:left}
+      .slot .wide{display:inline}
+      .slot .narrow{display:none}
       .gridHead,.gameRow{grid-template-columns:1fr 108px 108px 92px}
       .qControls{grid-template-columns:repeat(3,1fr)}
       .chartRow{grid-template-columns:minmax(120px,220px) 1fr auto}
@@ -523,12 +527,24 @@ const NFL_ABBR = {
   'San Francisco 49ers':'49ers','Seattle Seahawks':'Seahawks','Tampa Bay Buccaneers':'Buccaneers',
   'Tennessee Titans':'Titans','Washington Commanders':'Commanders'
 };
+/* Only the NFL map, which is a real shortening. No character truncation:
+   the column is 700px wide on a desktop and 120px on a phone, and JavaScript
+   cannot know which - so it returns the whole name and CSS ellipsis decides.
+   Truncating here cut "Virginia Cavaliers" down on a screen with room to
+   spare. */
 function shortName(full){
   const n = String(full || '');
-  if (NFL_ABBR[n]) return NFL_ABBR[n];
-  /* College names are "School Mascot" with no reliable boundary between them,
-     so trim rather than guess wrong. The full name stays in a title. */
-  return n.length > 16 ? n.slice(0, 15).trim() + '…' : n;
+  return NFL_ABBR[n] || n;
+}
+
+/* For a slot barely wider than a thumb: whichever team name is shorter still
+   identifies the game, where "San Jose State Spartans @ …" identifies nothing
+   once it is cut off. */
+function briefMatchup(matchup){
+  const sides = String(matchup || '').split(' @ ');
+  if (sides.length !== 2) return String(matchup || '');
+  const a = shortName(sides[0]), b = shortName(sides[1]);
+  return a.length <= b.length ? a : b;
 }
 
 /* =================== SEASON =================== */
@@ -867,9 +883,17 @@ function renderPicks(){
     let label, sub;
     if (p.market === 'total') {
       const sides = String(p.matchup || '').split(' @ ');
-      label = sides.length === 2 ? shortName(sides[0]) + ' @ ' + shortName(sides[1])
-                                 : String(p.matchup || '');
+      const full = sides.length === 2 ? shortName(sides[0]) + ' @ ' + shortName(sides[1])
+                                      : String(p.matchup || '');
+      /* Both forms ship; CSS picks one, since only CSS knows the width. */
+      label = '<span class="wide">' + esc(full) + '</span>'
+            + '<span class="narrow">' + esc(briefMatchup(p.matchup)) + '</span>';
       sub = (p.kind === 'under' ? 'U ' : 'O ') + meta.total;
+      return '<div class="slot filled" data-slot="' + i + '" title="'
+        + esc(p.selection + ' - ' + (p.matchup || '')) + '">'
+        + '<span class="role">' + s.role + '</span>'
+        + '<span class="pick">' + label + '</span>'
+        + '<span class="sub">' + esc(sub) + '</span></div>';
     } else if (p.market === 'spread') {
       label = shortName(p.selection);
       sub = signed(Number(meta.line));
