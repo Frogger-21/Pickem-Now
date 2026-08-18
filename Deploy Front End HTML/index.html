@@ -706,13 +706,33 @@ function renderGames(){
   });
 }
 
+/* Why a cell is dim, in words. Without this a dimmed cell is indistinguishable
+   from a broken one, and the only way to find out is to ask somebody. */
+const BLOCK_REASON = {
+  started: 'This game has already kicked off',
+  full:    'Your slip is full - clear a slot to change a pick',
+  league:  'You already have two picks in this league',
+  price:   'A moneyline must be priced better than -200'
+};
+const ROLE_REASON = {
+  favorite:'You already have a favourite', underdog:'You already have an underdog',
+  over:'You already have an over', under:'You already have an under',
+  ml:'You already have a moneyline'
+};
+function blockText(reason, market, kind){
+  if (reason === 'role') return ROLE_REASON[roleOf(market, kind)] || 'That role is already used';
+  return BLOCK_REASON[reason] || '';
+}
+
 function cellHtml(g, market, kind, sel, main, odds, meta){
-  if (main === null || main === undefined || main === '') return '<div class="cell blank"></div>';
+  if (main === null || main === undefined || main === '')
+    return '<div class="cell blank" title="Not priced"></div>';
   const selected = isPicked(g.id, market, kind, sel);
   const blocked  = selected ? null : cellBlocked(g, market, kind, odds);
   const cls = 'cell ' + (selected ? 'selected pickable' : (blocked ? 'dead' : 'pickable'));
   const priced = !(odds === null || odds === undefined || odds === '');
-  return '<div class="' + cls + '"'
+  const why = blocked ? blockText(blocked, market, kind) : (selected ? 'Tap to remove' : '');
+  return '<div class="' + cls + '" title="' + esc(why) + '"'
     + ' data-game="' + esc(g.id) + '" data-market="' + esc(market) + '"'
     + ' data-kind="' + esc(kind) + '" data-sel="' + esc(sel) + '"'
     + ' data-odds="' + (priced ? esc(odds) : '') + '"'

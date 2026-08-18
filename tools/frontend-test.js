@@ -359,6 +359,55 @@ function run4() {
          "while -199 is fine", h.api.cellBlocked(exact, "moneyline", "ml", -199));
     }
 
+    section("a dimmed cell says why it is dimmed");
+    {
+      const mk2 = (id, lg, ml) => ({ id:id, league:lg, kickoff:soon,
+        home_team:id+" Home", away_team:id+" Away",
+        spread:{ fav:"home", line:-3, favPrice:-110, dogPrice:-110 },
+        totals:{ total:44, overPrice:-110, underPrice:-110 },
+        moneyline:{ home:ml, away:150 } });
+      const a = mk2("q1","NFL",-150), b = mk2("q2","NFL",-150), c = mk2("q3","NCAAF",-400);
+      h.api.state.games=[a,b,c]; h.api.state.gamesAll=[a,b,c]; h.api.state.picks=[];
+
+      h.api.togglePick(a,"spread","favorite","q1 Home",{line:-3},-110);
+      let html = h.get("#games").innerHTML;
+      ok(/title="You already have a favourite"/.test(html),
+         "a used role explains itself", (html.match(/title="You already[^"]*"/)||[])[0]);
+      ok(/title="Tap to remove"/.test(html), "and the selected cell says how to undo it");
+      ok(/title="A moneyline must be priced better than -200"/.test(html),
+         "a short price explains itself");
+
+      h.api.togglePick(a,"total","over","Over",{total:44},-110);
+      h.api.togglePick(b,"spread","underdog","q2 Away",{line:3},-110);
+      html = h.get("#games").innerHTML;
+      ok(/title="You already have two picks in this league"/.test(html),
+         "and a full league does too", (html.match(/title="You already have two[^"]*"/)||[])[0]);
+
+      const started = mk2("q4","NFL",-150); started.kickoff = past;
+      h.api.state.games=[started]; h.api.state.gamesAll=[started];
+      h.api.renderGames();
+      ok(/title="This game has already kicked off"/.test(h.get("#games").innerHTML),
+         "as does a started game");
+    }
+
+    section("a game with no moneyline shows a blank, not a broken cell");
+    {
+      const g = { id:"nm", league:"NCAAF", kickoff:soon,
+        home_team:"No Line Home", away_team:"No Line Away",
+        spread:{ fav:"home", line:-3, favPrice:-110, dogPrice:-110 },
+        totals:{ total:44, overPrice:-110, underPrice:-110 },
+        moneyline:null };
+      h.api.state.games=[g]; h.api.state.gamesAll=[g]; h.api.state.picks=[];
+      h.api.renderGames();
+      const html = h.get("#games").innerHTML;
+      /* 24 of 111 real college games have no moneyline priced. */
+      ok((html.match(/class="cell blank"/g)||[]).length === 2,
+         "both moneyline cells are blank", (html.match(/class="cell blank"/g)||[]).length);
+      ok(/title="Not priced"/.test(html), "and say so rather than looking disabled");
+      ok((html.match(/pickable/g)||[]).length === 4, "the other four still work",
+         (html.match(/pickable/g)||[]).length);
+    }
+
     section("a started game is inert whatever else is true");
     {
       const g = { id:"gx", league:"NFL", kickoff:past,
