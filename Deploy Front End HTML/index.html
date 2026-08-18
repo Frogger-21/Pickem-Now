@@ -532,11 +532,17 @@ async function buildBoard(){
   if(!rows.length){
     tbody.innerHTML='<tr><td colspan="6" class="hint">No graded picks yet.</td></tr>';
   } else {
+    /* The trophy marks the champion, which is most weeks won - not whoever
+       happens to sit on the top row. The table sorts on total wins, and the
+       two need not be the same person: a season can be led on raw wins by
+       somebody who kept finishing second on the night. */
+    const mostWeeks = rows.reduce((m,r)=>Math.max(m, r.weeksWon||0), 0);
+
     rows.forEach((row,i)=>{
       const tr=document.createElement('tr');
       // .644 rather than 0.644 — the leading zero is noise in a standings table
       const pct=(row.pct||0).toFixed(3).replace(/^0/,'');
-      const trophy = (i===0 && row.weeksWon>0) ? ' 🏆' : '';
+      const trophy = (mostWeeks>0 && row.weeksWon===mostWeeks) ? ' 🏆' : '';
       tr.innerHTML=`
         <td>${row.user}${trophy}</td>
         <td><strong>${row.weeksWon}</strong></td>

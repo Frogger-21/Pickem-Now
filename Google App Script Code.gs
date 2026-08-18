@@ -1374,9 +1374,14 @@ function getBoard_() {
       weeksPlayed: Object.keys(r.weeksPlayed).length,
       pct:         decided ? Math.round((r.wins / decided) * 1000) / 1000 : 0
     };
+  // Total wins first, win percentage to break a tie. Weeks won stays in the
+  // table and still decides the championship - it is just not what orders the
+  // rows, because two people on the same number of weeks can be far apart on
+  // how many picks they actually got right.
   }).sort((a, b) =>
-      (b.weeksWon - a.weeksWon) ||
       (b.wins - a.wins) ||
+      (b.pct - a.pct) ||
+      (b.weeksWon - a.weeksWon) ||
       (a.losses - b.losses) ||
       a.user.localeCompare(b.user));
 }

@@ -312,6 +312,44 @@ section("a self-test week can never reach the scoreboard");
   ok(api.getWeeks_().every(w => w.week !== "__selftest__"), "the fake week is not listed");
 }
 
+// ---------------------------------------------------------------- board sort
+section("the season table ranks on wins, then win percentage");
+{
+  // Deliberately arranged so every ordering rule has to fire: two people tied
+  // on wins with different percentages, and the weeks-won leader NOT the wins
+  // leader, which is the case that used to decide the order.
+  const mk = (user, week, results) => results.map((s, i) =>
+    row(user + week + i, user + "@x.com", user, "NFL", "g" + i, "moneyline", "ml",
+        "Kansas City Chiefs", {}, s, week));
+
+  const picks = [PICK_HEADERS,
+    // Amy: 5 wins, 1 loss  -> most wins, best pct
+    ...mk("Amy", "w1", ["win", "win", "win", "loss"]),
+    ...mk("Amy", "w2", ["win"]),
+    // Bob: 3 wins, 1 loss  -> .750
+    ...mk("Bob", "w1", ["win", "win", "loss"]),
+    ...mk("Bob", "w2", ["win"]),
+    // Cid: 3 wins, 3 losses -> .500, same wins as Bob, worse pct
+    ...mk("Cid", "w1", ["win", "loss", "loss"]),
+    ...mk("Cid", "w2", ["win", "win", "loss"])
+  ];
+
+  const { api } = harness({ Picks: picks, Results: [] }, SCORES);
+  const board = api.getBoard_();
+  const order = board.map((r) => r.user);
+
+  ok(order[0] === "Amy", "most wins goes top", order.join(" > "));
+  ok(order.indexOf("Bob") < order.indexOf("Cid"),
+     "equal wins broken by percentage, not alphabetically", order.join(" > "));
+
+  const bob = board.find((r) => r.user === "Bob"), cid = board.find((r) => r.user === "Cid");
+  ok(bob.wins === cid.wins, "and those two really are level on wins", bob.wins + " vs " + cid.wins);
+  ok(bob.pct > cid.pct, "with Bob ahead on percentage", bob.pct + " vs " + cid.pct);
+
+  // Weeks won is still reported; it just no longer drives the order.
+  ok(board.every((r) => typeof r.weeksWon === "number"), "weeks won is still on every row");
+}
+
 // ---------------------------------------------------------------- layering
 // The point of the STORAGE section is that nothing outside it knows what a
 // spreadsheet is. That property is invisible at runtime and easy to erode one
