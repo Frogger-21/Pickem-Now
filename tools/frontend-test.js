@@ -505,6 +505,21 @@ function run4() {
          h.get("#ruleML").textContent);
     }
 
+    section("a pick row stays on one line per field");
+    {
+      /* The bug this exists for: the row was a grid whose 1fr track is
+         minmax(auto,1fr). Its auto minimum fought a 40-character matchup until
+         every single word, including the middle dot, wrapped onto its own
+         line. Flex with min-width:0 is what lets it ellipsis instead. */
+      const css = HTML.match(/<style>([\s\S]*?)<\/style>/)[1];
+      const rowCss = css.slice(css.indexOf(".pickRow{"), css.indexOf(".weekRow{"));
+      ok(/display:flex/.test(rowCss), "the row is flex, not grid");
+      ok(!/grid-template-columns/.test(rowCss), "no track sizing left to collapse");
+      ok(/min-width:0/.test(rowCss), "and the text column may shrink below its content");
+      ok(/text-overflow:ellipsis/.test(rowCss), "so long values ellipsis");
+      ok(/white-space:nowrap/.test(rowCss), "rather than wrapping a word at a time");
+    }
+
     section("a stats failure is reported, not silent");
     const dead = harness({ seasons: SEASONS });   // no stats endpoint
     await dead.api.loadSeasons();

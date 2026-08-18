@@ -43,7 +43,7 @@
     header{display:flex;align-items:flex-start;gap:12px;justify-content:space-between;padding:14px 0 10px}
     .brand{font-family:var(--mono);font-size:11px;letter-spacing:.18em;
            text-transform:uppercase;color:var(--accent);font-weight:700}
-    .headRight{display:flex;align-items:center;gap:10px}
+    .headRight{display:flex;align-items:center;gap:10px;flex:none}
     .seasonBar{display:flex;align-items:center;gap:7px;margin-top:4px}
     .seasonBar label{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;
                      text-transform:uppercase;color:var(--faint)}
@@ -178,19 +178,26 @@
     .slipHead{display:flex;align-items:baseline;gap:10px;margin:14px 0 10px}
     .slipHead .wk{font-size:17px;font-weight:700}
     .slipHead .rec{margin-left:auto;font-family:var(--mono);font-size:19px;font-weight:700}
-    .pickRow{display:grid;grid-template-columns:3px 1fr auto;gap:10px;align-items:center;
-             background:var(--surface);border:1px solid var(--line-soft);border-radius:11px;
-             padding:8px 11px 8px 0;margin-bottom:6px;overflow:hidden;min-height:52px}
-    .pickRow .bar{align-self:stretch;border-radius:3px 0 0 3px;background:var(--pend)}
+    /* Flex, not grid. A 1fr track is minmax(auto,1fr), and its auto minimum
+       fights a long matchup string until every word wraps onto its own line.
+       flex:1 with min-width:0 lets the text shrink and ellipsis instead. */
+    .pickRow{display:flex;align-items:stretch;background:var(--surface);
+             border:1px solid var(--line-soft);border-radius:11px;margin-bottom:6px;
+             overflow:hidden;min-height:58px}
+    .pickRow .bar{width:3px;flex:none;background:var(--pend)}
     .pickRow.win  .bar{background:var(--win)}
     .pickRow.loss .bar{background:var(--loss)}
     .pickRow.live .bar{background:var(--accent)}
-    .pickRow .sel{font-weight:700;font-size:14px}
+    .pickRow .mid{flex:1;min-width:0;padding:9px 4px 9px 11px;display:flex;
+                  flex-direction:column;justify-content:center;gap:2px}
+    .pickRow .mid > *{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .pickRow .sel{font-weight:700;font-size:14.5px}
     .pickRow .matchup{font-size:11.5px;color:var(--faint)}
     .pickRow .role{font-family:var(--mono);font-size:8.5px;letter-spacing:.1em;
                    color:var(--faint);text-transform:uppercase}
-    .pickRow .right{text-align:right;display:flex;flex-direction:column;gap:2px}
-    .pickRow .odds{font-family:var(--mono);font-size:12px;color:var(--dim)}
+    .pickRow .right{flex:none;padding:9px 12px 9px 8px;display:flex;flex-direction:column;
+                    align-items:flex-end;justify-content:center;gap:3px}
+    .pickRow .odds{font-family:var(--mono);font-size:13px;color:var(--dim)}
     .pickRow .status{font-family:var(--mono);font-size:9px;letter-spacing:.1em;color:var(--pend)}
     .pickRow.win  .status{color:var(--win)}
     .pickRow.loss .status{color:var(--loss)}
@@ -271,7 +278,9 @@
     /* ------------------------------------------------------- desktop, 900px */
     @media (min-width:900px){
       .wrap{padding:0 22px 40px}
-      .identity{grid-template-columns:190px 240px;margin-bottom:0}
+      /* Desktop has the width for it beside the brand. */
+      .identity{grid-template-columns:190px 240px;margin:-52px 0 14px;
+                justify-content:end;padding-right:46px}
       .tabs{display:inline-flex;gap:6px}
       .tab{flex:0 0 auto;padding:9px 16px}
       #view-picks{padding-bottom:0;display:grid;grid-template-columns:1fr 330px;
@@ -303,14 +312,18 @@
       </div>
     </div>
     <div class="headRight">
-      <div class="identity">
-        <input id="nameInput" type="text" placeholder="Your name" autocomplete="name"/>
-        <input id="emailInput" type="email" placeholder="you@example.com" autocomplete="email"/>
-      </div>
       <div id="userBadge" class="hidden" title="Sign out"></div>
       <button id="btnLogout" class="hidden">Sign out</button>
     </div>
   </header>
+
+  <!-- The email is the identity, so it stays on the page. Full width on a
+       phone: squeezed beside the brand it truncates to "reid@..." and reads
+       like a bug. -->
+  <div class="identity">
+    <input id="nameInput" type="text" placeholder="Your name" autocomplete="name"/>
+    <input id="emailInput" type="email" placeholder="you@example.com" autocomplete="email"/>
+  </div>
 
   <div class="tabs">
     <div class="tab active" data-tab="picks">Picks</div>
@@ -995,12 +1008,22 @@ function pickRowHtml(p){
   const line=(p.line===''||p.line===null||p.line===undefined)?'':' '+signed(Number(p.line));
   const role=p.market==='moneyline'?'ML':String(p.kind||'').toUpperCase();
   const priced=!(p.odds===''||p.odds===null||p.odds===undefined);
-  return '<div class="pickRow '+cls+'"><span class="bar"></span>'
-    + '<span><span class="role">'+esc(role)+' · '+esc(p.league)+'</span><br>'
-    + '<span class="sel">'+esc(p.selection)+esc(line)+'</span><br>'
-    + '<span class="matchup">'+esc(p.matchup)+'</span></span>'
-    + '<span class="right"><span class="odds">'+(priced?esc(signed(Number(p.odds))):'')+'</span>'
-    + '<span class="status">'+esc(st.toUpperCase())+'</span></span></div>';
+  /* Both teams shortened for the second line - the full matchup is 40-odd
+     characters and only ever gets ellipsed away on a phone. */
+  const sides = String(p.matchup || '').split(' @ ');
+  const shortMatchup = sides.length === 2
+    ? shortName(sides[0]) + ' @ ' + shortName(sides[1]) : String(p.matchup || '');
+  return '<div class="pickRow '+cls+'" title="'+esc(p.matchup)+'">'
+    + '<span class="bar"></span>'
+    + '<div class="mid">'
+    +   '<div class="role">'+esc(role)+' · '+esc(p.league)+'</div>'
+    +   '<div class="sel">'+esc(p.selection)+esc(line)+'</div>'
+    +   '<div class="matchup">'+esc(shortMatchup)+'</div>'
+    + '</div>'
+    + '<div class="right">'
+    +   '<div class="odds">'+(priced?esc(signed(Number(p.odds))):'')+'</div>'
+    +   '<div class="status">'+esc(st.toUpperCase())+'</div>'
+    + '</div></div>';
 }
 
 /* =================== SCOREBOARD =================== */
