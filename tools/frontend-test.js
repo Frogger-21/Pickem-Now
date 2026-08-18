@@ -69,7 +69,7 @@ function harness(apiResponses) {
     document: {
       addEventListener(ev, fn) { if (ev === "DOMContentLoaded") this._boot = fn; },
       querySelector: (sel) => get(sel),
-      querySelectorAll: (sel) => (sel === ".tab" ? tabs : sel === ".view" ? [] : []),
+      querySelectorAll: (sel) => (sel === ".tab" ? tabs : []),
       createElement: () => makeEl("created")
     },
     fetch: async (url) => {
@@ -85,7 +85,8 @@ function harness(apiResponses) {
   const src = HTML.match(/<script>([\s\S]*)<\/script>/)[1];
 
   const exported = "return { SEASON, apiUrl, loadSeasons, buildQueries, renderQuery,"
-    + " drawBars, esc, pctText, recText, unitText, Q, gameStarted, boot: document._boot };";
+    + " drawBars, esc, pctText, recText, unitText, Q, gameStarted, state, renderGames,"
+    + " togglePick, renderPicks, validateRules, cellBlocked, shortName, boot: document._boot };";
 
   const fn = new Function(
     "localStorage", "sessionStorage", "location", "console", "document", "fetch", "window",
@@ -196,7 +197,7 @@ function run3() {
     await h.api.buildQueries();
 
     const chart = h.get("#qChart"), summary = h.get("#qSummary"), note = h.get("#qNote");
-    ok(/Everyone combined/.test(h.get("#qPlayer").innerHTML), "the who selector is filled",
+    ok(/All players/.test(h.get("#qPlayer").innerHTML), "the who selector is filled",
        h.get("#qPlayer").innerHTML.slice(0, 60));
     ok(/Ann/.test(h.get("#qPlayer").innerHTML) && /Bob/.test(h.get("#qPlayer").innerHTML),
        "with every player");
@@ -245,11 +246,11 @@ function run3() {
     h.get("#qView").value = "markets";
     h.get("#qPlayer").value = "Ann";
     h.api.renderQuery();
-    ok(/6-3/.test(summary.innerHTML), "Ann's own record", summary.innerHTML);
+    ok(/6-3/.test(summary.textContent), "Ann's own record", summary.textContent);
     h.get("#qPlayer").value = "Bob";
     h.api.renderQuery();
-    ok(/4-5-1/.test(summary.innerHTML), "and Bob's, pushes included", summary.innerHTML);
-    ok(/-0\.90u/.test(summary.innerHTML), "with his units", summary.innerHTML);
+    ok(/4-5-1/.test(summary.textContent), "and Bob's, pushes included", summary.textContent);
+    ok(/-0\.90u/.test(summary.textContent), "with his units", summary.textContent);
   })().then(run4);
 }
 
@@ -277,6 +278,146 @@ function run4() {
     ok(gs({}) === false, "no kickoff is treated as not started - the same as the server");
     ok(gs({ kickoff: "not a date" }) === false, "and so is an unparseable one");
     ok(gs(null) === false, "a missing game does not throw");
+
+
+    section("the odds grid builds six cells per game");
+    {
+      const g = { id:"g1", league:"NFL", kickoff:soon,
+        home_team:"Kansas City Chiefs", away_team:"Buffalo Bills",
+        spread:{ fav:"home", line:-6.5, favPrice:-110, dogPrice:-108 },
+        totals:{ total:47.5, overPrice:-112, underPrice:-108 },
+        moneyline:{ home:-280, away:230 } };
+      h.api.state.games = [g]; h.api.state.gamesAll = [g];
+      h.api.state.picks = [];
+      h.api.renderGames();
+      const html = h.get("#games").innerHTML;
+
+      ok((html.match(/class="cell/g) || []).length === 6, "six cells",
+         (html.match(/class="cell/g) || []).length);
+      ok(/Chiefs/.test(html) && /Bills/.test(html), "both teams named");
+      // The favourite lays its number, the dog takes it.
+      ok(/-6\.5/.test(html), "the favourite's line is negative");
+      ok(/\+6\.5/.test(html), "and the dog's is positive");
+      ok(/O 47\.5/.test(html) && /U 47\.5/.test(html), "over on the away row, under on the home row");
+      ok(/\+230/.test(html), "plus money is signed");
+    }
+
+    section("illegal cells dim rather than erroring");
+    {
+      const mk = (id, lg, fav) => ({ id:id, league:lg, kickoff:soon,
+        home_team:id+" Home", away_team:id+" Away",
+        spread:{ fav:"home", line:-3, favPrice:-110, dogPrice:-110 },
+        totals:{ total:44, overPrice:-110, underPrice:-110 },
+        moneyline:{ home:fav, away:150 } });
+
+      const g1 = mk("g1","NFL",-150), g2 = mk("g2","NFL",-150), g3 = mk("g3","NCAAF",-150);
+      h.api.state.games = [g1,g2,g3]; h.api.state.gamesAll = [g1,g2,g3];
+      h.api.state.picks = [];
+
+      // Take the favourite on g1. Every other favourite must now be dead.
+      h.api.togglePick(g1, "spread", "favorite", "g1 Home", { line:-3 }, -110);
+      let html = h.get("#games").innerHTML;
+      ok(h.api.state.picks.length === 1, "the pick registered", h.api.state.picks.length);
+      const favCells = html.split('data-kind="favorite"');
+      ok(favCells.length === 4, "three favourite cells exist", favCells.length - 1);
+      // The one taken is selected; the other two dead.
+      ok((html.match(/class="cell selected pickable"/g) || []).length === 1,
+         "exactly one selected cell");
+      ok((html.match(/class="cell dead"/g) || []).length >= 2,
+         "the other favourites are dead", (html.match(/class="cell dead"/g) || []).length);
+
+      // Two NFL non-ML picks fills the league; g3 (college) stays open.
+      h.api.togglePick(g2, "total", "over", "Over", { total:44 }, -110);
+      html = h.get("#games").innerHTML;
+      const g3open = html.split('data-game="g3"').slice(1)
+        .filter(x => x.indexOf('dead') !== 0).length;
+      ok(g3open > 0, "college cells are still available once NFL is full");
+
+      // A -280 moneyline is illegal: the rule is strictly better than -200.
+      h.api.state.picks = [];
+      const chalk = mk("g9","NFL",-280);
+      h.api.state.games = [chalk]; h.api.state.gamesAll = [chalk];
+      h.api.renderGames();
+      html = h.get("#games").innerHTML;
+      const mlCells = html.split('data-market="moneyline"');
+      ok(/-280/.test(html), "the short price is still shown");
+      ok(mlCells[1].indexOf("dead") < 0 ? false : true, "and its cell is dead",
+         mlCells[1].slice(0, 40));
+
+      /* The boundary itself. -200 exactly is illegal - the rule is strictly
+         better than -200 - and only a test AT the boundary can tell > from >=. */
+      h.api.state.picks = [];
+      const exact = mk("g10","NFL",-200);
+      h.api.state.games = [exact]; h.api.state.gamesAll = [exact];
+      h.api.renderGames();
+      const atBoundary = h.get("#games").innerHTML.split('data-market="moneyline"')[1] || "";
+      ok(atBoundary.indexOf("dead") >= 0, "-200 exactly is refused, not allowed",
+         atBoundary.slice(0, 40));
+      ok(h.api.cellBlocked(exact, "moneyline", "ml", -200) === "price",
+         "and cellBlocked says why");
+      ok(h.api.cellBlocked(exact, "moneyline", "ml", -199) === null,
+         "while -199 is fine", h.api.cellBlocked(exact, "moneyline", "ml", -199));
+    }
+
+    section("a started game is inert whatever else is true");
+    {
+      const g = { id:"gx", league:"NFL", kickoff:past,
+        home_team:"A Home", away_team:"A Away",
+        spread:{ fav:"home", line:-3, favPrice:-110, dogPrice:-110 },
+        totals:{ total:44, overPrice:-110, underPrice:-110 },
+        moneyline:{ home:-120, away:110 } };
+      h.api.state.games = [g]; h.api.state.gamesAll = [g]; h.api.state.picks = [];
+      h.api.renderGames();
+      const html = h.get("#games").innerHTML;
+      ok(/class="game started"/.test(html), "the card is marked started");
+      ok(/Kicked off/.test(html), "and badged");
+      ok((html.match(/pickable/g) || []).length === 0, "no cell is pickable",
+         (html.match(/pickable/g) || []).length);
+
+      // Even called directly, the pick is refused.
+      h.api.togglePick(g, "spread", "favorite", "A Home", { line:-3 }, -110);
+      ok(h.api.state.picks.length === 0, "and togglePick refuses it too",
+         h.api.state.picks.length);
+    }
+
+    section("the slip carries what the server needs");
+    {
+      const g = { id:"gs", league:"NCAAF", kickoff:soon,
+        home_team:"Georgia Bulldogs", away_team:"Alabama Crimson Tide",
+        spread:{ fav:"home", line:-7.5, favPrice:-115, dogPrice:-105 },
+        totals:{ total:52.5, overPrice:-110, underPrice:-110 },
+        moneyline:{ home:-300, away:250 } };
+      h.api.state.games = [g]; h.api.state.gamesAll = [g]; h.api.state.picks = [];
+      h.api.togglePick(g, "spread", "underdog", "Alabama Crimson Tide", { line:7.5, price:-105 }, -105);
+
+      const p = h.api.state.picks[0];
+      ok(p.matchup === "Alabama Crimson Tide @ Georgia Bulldogs",
+         "matchup is away @ home - the only record of which side was home", p.matchup);
+      ok(p.selection === "Alabama Crimson Tide",
+         "selection is the feed's exact string, not an abbreviation", p.selection);
+      ok(p.gameId === "gs", "gameId round-trips - it is what grading joins on");
+      ok(p.league === "NCAAF", "league is uppercased");
+      ok(p.meta.line === 7.5, "the line is frozen at pick time", p.meta.line);
+      ok(/^\d{4}-\d{2}-\d{2}$/.test(p.week), "week is a plain date", p.week);
+      ok(p.kickoff === soon, "kickoff travels with it for the server's lock");
+    }
+
+    section("the slot bar mirrors the rules");
+    {
+      h.api.state.picks = [];
+      h.api.renderPicks(); h.api.validateRules();
+      ok((h.get("#slotRow").innerHTML.match(/class="slot"/g) || []).length === 5,
+         "five empty slots");
+      ok(/Pick 5 more/.test(h.get("#btnSubmit").textContent), "the button counts down",
+         h.get("#btnSubmit").textContent);
+      ok(h.get("#btnSubmit").disabled === true, "and is disabled");
+      ok(/NFL 0\/2/.test(h.get("#leagueTally").textContent), "the tally starts empty");
+
+      // The counter elements the contract names still carry their text.
+      ok(/NFL: 0\/2/.test(h.get("#ruleNFL").textContent), "ruleNFL still says what it said");
+      ok(/ML: 0\/1 \(odds > -200\)/.test(h.get("#ruleML").textContent), "and ruleML too",
+         h.get("#ruleML").textContent);
+    }
 
     section("a stats failure is reported, not silent");
     const dead = harness({ seasons: SEASONS });   // no stats endpoint
