@@ -685,7 +685,8 @@ function capabilities_() {
     weeksort:  typeof weekKey_           === 'function',
     seasons:   typeof getSeasons_       === 'function',
     stats:     typeof getStats_         === 'function',
-    kickofflock: typeof checkKickoffLock_ === 'function'
+    kickofflock: typeof checkKickoffLock_ === 'function',
+    notify:      typeof notifyWeekOpen     === 'function'
   };
   return Object.keys(has).filter(function (k) { return has[k]; });
 }
@@ -1058,6 +1059,7 @@ function fetchScores_(league, eventIds) {
   const res = UrlFetchApp.fetch(url, { muteHttpExceptions: true, method: 'get' });
   const code = res.getResponseCode();
   if (code !== 200) throw new Error('Scores API ' + code + ': ' + res.getContentText().slice(0, 300));
+  warnOnLowCredits_(res.getHeaders()['x-requests-remaining']);
 
   const data = JSON.parse(res.getContentText());
   return (Array.isArray(data) ? data : []).map(ev => {
@@ -1079,6 +1081,27 @@ function fetchScores_(league, eventIds) {
       lastUpdate: ev.last_update || ''
     };
   });
+}
+
+/**
+ * Warn once per threshold crossed, not on every call.
+ *
+ * The balance rides along in a response header of a call being made anyway, so
+ * watching it costs nothing. Running out mid-season stops grading dead and the
+ * only symptom is picks quietly staying pending.
+ */
+function warnOnLowCredits_(remainingHeader) {
+  const left = Number(remainingHeader);
+  if (!isFinite(left)) return;
+  if (left > LOW_CREDITS) { props_().deleteProperty('CREDIT_WARNED'); return; }
+  if (props_().getProperty('CREDIT_WARNED') === 'yes') return;
+  props_().setProperty('CREDIT_WARNED', 'yes');
+  notifyAdmin_('running low on API credits', [
+    'The Odds API reports ' + left + ' credits left this month.',
+    '',
+    'Grading needs about 8 a week and stops working at zero, which shows up',
+    'only as picks staying pending.'
+  ].join('\n'));
 }
 
 /**
@@ -1136,11 +1159,38 @@ function autoGrade() {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(30000)) return { ok: false, error: 'another grading run is in progress' };
   try {
-    return runAutoGrade_();
+    const out = runAutoGrade_();
+    /* A scheduled job that fails silently is worse than one that never runs:
+       nobody finds out until somebody asks why their picks are still pending,
+       and by then the game can be older than daysFrom is able to reach. */
+    if (out && out.errors && out.errors.length) {
+      notifyAdmin_('grading hit errors', [
+        'autoGrade ran but could not fetch every league.',
+        '',
+        out.errors.join('\n'),
+        '',
+        'Graded ' + out.graded + ', still pending ' + out.stillPending + '.',
+        '',
+        'Scores are only available for three days. A week left ungraded past',
+        'that has to be settled by hand with backtestWeek().'
+      ].join('\n'));
+    }
+    return out;
+  } catch (e) {
+    notifyAdmin_('grading failed', [
+      'autoGrade threw and nothing was graded.',
+      '',
+      String(e && e.stack ? e.stack : e),
+      '',
+      'Scores are only available for three days, so this is worth looking at',
+      'before the weekend is out.'
+    ].join('\n'));
+    throw e;
   } finally {
     lock.releaseLock();
   }
 }
+
 
 /**
  * opts.noFetch skips the API entirely and grades against whatever is already
@@ -2925,4 +2975,269 @@ function checkKickoffLock_(email, picks, now) {
     }
   }
   return null;
+}
+
+// ===== NOTIFICATIONS =========================================================
+// A pool works because people are told things. Without this the whole thing
+// depends on somebody remembering to open a website on a Wednesday.
+//
+// Off until you turn it on: Script Property NOTIFY = on. ADMIN_EMAIL is where
+// failures go, and is the one address that hears about them.
+//
+//   installNotifyTriggers()   schedules the three weekly messages
+//   removeNotifyTriggers()    stops them
+//   previewNotifications()    prints what would be sent, sends nothing
+//
+// Each message records the week it went out for, so a re-run or an overlapping
+// trigger cannot send it twice.
+
+const NOTIFY_KEY  = 'NOTIFY';
+const ADMIN_KEY   = 'ADMIN_EMAIL';
+const LOW_CREDITS = 60;
+
+function notifyEnabled_() {
+  return String(props_().getProperty(NOTIFY_KEY) || '').trim().toLowerCase() === 'on';
+}
+function adminEmail_() {
+  return String(props_().getProperty(ADMIN_KEY) || '').trim();
+}
+
+/** The Wednesday on or before today - the same key the page picks with. */
+function currentWeekKey_() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - ((d.getDay() - 3 + 7) % 7));
+  return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2)
+       + '-' + ('0' + d.getDate()).slice(-2);
+}
+
+/** Everyone who should hear from us: this season's players, or last season's
+    before a new one has anybody in it. */
+function leagueMembers_() {
+  function gather(season) {
+    const by = {};
+    for (const p of picksForSeason_(season)) {
+      const e = String(p.email || '').trim().toLowerCase();
+      if (e) by[e] = { email: e, user: String(p.user || '').trim() || e };
+    }
+    return Object.keys(by).map(function (k) { return by[k]; });
+  }
+  let m = gather(currentSeason_());
+  if (!m.length) {
+    for (const s of getSeasons_()) {
+      m = gather(s.season);
+      if (m.length) break;
+    }
+  }
+  return m;
+}
+
+/* A message is sent once per week per kind. Re-running a trigger, or two
+   firing close together, must not mean two emails. */
+function alreadySent_(kind, week) {
+  return props_().getProperty('SENT:' + kind) === String(week);
+}
+function markSent_(kind, week) {
+  props_().setProperty('SENT:' + kind, String(week));
+}
+
+function sendMail_(to, subject, body) {
+  if (!to) return false;
+  MailApp.sendEmail({ to: to, subject: subject, body: body });
+  return true;
+}
+
+/**
+ * Something went wrong that nobody would otherwise notice. Errors here are
+ * swallowed on purpose - a failure to report a failure must not take down the
+ * thing it was reporting on.
+ */
+function notifyAdmin_(subject, body) {
+  const to = adminEmail_();
+  if (!to) return false;
+  try {
+    MailApp.sendEmail({ to: to, subject: 'Picks Game: ' + subject, body: body });
+    return true;
+  } catch (e) {
+    Logger.log('could not notify admin: ' + e.message);
+    return false;
+  }
+}
+
+/** Which leagues have games in a week. Cached, so this is normally free. */
+function weekLeagues_(weekKey) {
+  const out = { NFL: 0, NCAAF: 0 };
+  const parts = String(weekKey).split('-').map(Number);
+  if (parts.length !== 3) return out;
+  const start = new Date(parts[0], parts[1] - 1, parts[2]);
+  const end   = new Date(start.getTime() + 7 * 86400000);
+  for (const lg of ['NFL', 'NCAAF']) {
+    try {
+      for (const g of (getOdds_(lg, null, {}).games || [])) {
+        const t = g.kickoff ? new Date(g.kickoff) : null;
+        if (t && t >= start && t < end) out[lg]++;
+      }
+    } catch (_) {}
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- the three
+/**
+ * Wednesday. The week is open.
+ *
+ * Skipped when a league has no games, because the rules need two from each and
+ * college opens a fortnight before the NFL - telling people a week is open
+ * when it cannot be played would be worse than saying nothing.
+ */
+function notifyWeekOpen() {
+  const week = currentWeekKey_();
+  if (!notifyEnabled_() || alreadySent_('open', week)) return 'skipped';
+
+  const lg = weekLeagues_(week);
+  if (!lg.NFL || !lg.NCAAF) {
+    markSent_('open', week);
+    return 'week ' + week + ' is not playable (NFL ' + lg.NFL + ', CFB ' + lg.NCAAF + ') - nothing sent';
+  }
+
+  const body = 'Picks are open for the week of ' + week + '.\n\n'
+    + lg.NFL + ' NFL games and ' + lg.NCAAF + ' college games on the board.\n\n'
+    + 'Five picks: two NFL, two college, one over, one under, one favourite,\n'
+    + 'one underdog, plus a moneyline better than -200.\n\n'
+    + 'Each game locks at its own kickoff, so you can change a pick right up\n'
+    + 'until that game starts.\n\n'
+    + 'https://quinton4mvp.com/';
+
+  let n = 0;
+  for (const m of leagueMembers_()) if (sendMail_(m.email, 'Picks are open - week of ' + week, body)) n++;
+  markSent_('open', week);
+  return 'week open sent to ' + n;
+}
+
+/**
+ * A nudge, to the people who need it and nobody else. Sending "you have not
+ * picked" to somebody who has is how a mailing list gets muted.
+ */
+function notifyPickReminder() {
+  const week = currentWeekKey_();
+  if (!notifyEnabled_() || alreadySent_('remind', week)) return 'skipped';
+
+  const lg = weekLeagues_(week);
+  if (!lg.NFL || !lg.NCAAF) { markSent_('remind', week); return 'not a playable week'; }
+
+  const detail = getWeek_(week);
+  const short = detail.rows.filter(function (r) { return !r.complete; });
+  if (!short.length) { markSent_('remind', week); return 'everybody is in - nothing sent'; }
+
+  const byName = {};
+  for (const m of leagueMembers_()) byName[m.user] = m.email;
+
+  let n = 0;
+  for (const r of short) {
+    const to = byName[r.user];
+    if (!to) continue;
+    const body = (r.picks
+        ? 'You have ' + r.picks + ' of ' + detail.expected + ' picks in for the week of ' + week + '.'
+        : 'You have not picked yet for the week of ' + week + '.')
+      + '\n\nGames lock at their own kickoff, so whatever has not started is still open.\n\n'
+      + 'https://quinton4mvp.com/';
+    if (sendMail_(to, 'Picks still open - week of ' + week, body)) n++;
+  }
+  markSent_('remind', week);
+  return 'reminded ' + n + ' of ' + detail.rows.length;
+}
+
+/**
+ * Monday. Who won, and where the season stands - the message somebody is
+ * otherwise writing into the group chat by hand.
+ */
+function notifyWeekResults() {
+  if (!notifyEnabled_()) return 'skipped';
+
+  // The most recent decided week, which is not necessarily this one.
+  const weeks = getWeeks_();
+  const done = weeks.filter(function (w) { return w.decided; })[0];
+  if (!done) return 'no decided week yet';
+  if (alreadySent_('results', done.week)) return 'already sent for ' + done.week;
+
+  const detail = getWeek_(done.week);
+  const board = getBoard_();
+
+  const lines = detail.rows.filter(function (r) { return r.picks; })
+    .map(function (r) {
+      return '  ' + (r.winner ? '* ' : '  ') + r.user + '  ' + r.wins + '-' + r.losses
+           + (r.pushes ? '-' + r.pushes : '');
+    });
+
+  const table = board.slice(0, 8).map(function (r, i) {
+    return '  ' + (i + 1) + '. ' + r.user + '  ' + r.wins + '-' + r.losses
+         + '  ' + String(r.pct).replace(/^0/, '') + '  (' + r.weeksWon + ' weeks)';
+  });
+
+  const body = 'Week of ' + done.week + ' is final.\n\n'
+    + 'Winner: ' + ((done.winners || []).join(' and ') || 'nobody') + '\n\n'
+    + lines.join('\n') + '\n\n'
+    + 'Season so far, by total wins:\n' + table.join('\n') + '\n\n'
+    + 'https://quinton4mvp.com/';
+
+  let n = 0;
+  for (const m of leagueMembers_()) {
+    if (sendMail_(m.email, 'Week of ' + done.week + ': '
+        + ((done.winners || []).join(' and ') || 'nobody') + ' takes it', body)) n++;
+  }
+  markSent_('results', done.week);
+  return 'results sent to ' + n;
+}
+
+// ---------------------------------------------------------------- controls
+/** Read-only. Says what each message would do right now, and sends nothing. */
+function previewNotifications() {
+  const week = currentWeekKey_();
+  const lg = weekLeagues_(week);
+  const members = leagueMembers_();
+  const detail = getWeek_(week);
+  const weeks = getWeeks_();
+  const done = weeks.filter(function (w) { return w.decided; })[0];
+
+  const out = [];
+  out.push('NOTIFY        : ' + (notifyEnabled_() ? 'on' : 'OFF - nothing will send'));
+  out.push('ADMIN_EMAIL   : ' + (adminEmail_() || 'not set - failures go unreported'));
+  out.push('this week     : ' + week + '  (NFL ' + lg.NFL + ', CFB ' + lg.NCAAF + ')'
+    + ((!lg.NFL || !lg.NCAAF) ? '  - not playable, week-open and reminder stay quiet' : ''));
+  out.push('recipients    : ' + members.length + '  ' + members.map(function (m) { return m.user; }).join(', '));
+  out.push('');
+  out.push('week open     : ' + (alreadySent_('open', week) ? 'already sent' : 'would send'));
+  const short = detail.rows.filter(function (r) { return !r.complete; });
+  out.push('reminder      : ' + (alreadySent_('remind', week) ? 'already sent'
+    : short.length ? 'would nudge ' + short.map(function (r) { return r.user; }).join(', ')
+                   : 'everybody is in, would stay quiet'));
+  out.push('results       : ' + (done
+    ? (alreadySent_('results', done.week) ? 'already sent for ' + done.week
+                                          : 'would send for ' + done.week)
+    : 'no decided week yet'));
+
+  const msg = out.join('\n');
+  Logger.log(msg);
+  return msg;
+}
+
+/** Wednesday morning, Friday evening, Tuesday morning. Clears its own first. */
+function installNotifyTriggers() {
+  removeNotifyTriggers();
+  ScriptApp.newTrigger('notifyWeekOpen').timeBased()
+    .onWeekDay(ScriptApp.WeekDay.WEDNESDAY).atHour(9).create();
+  ScriptApp.newTrigger('notifyPickReminder').timeBased()
+    .onWeekDay(ScriptApp.WeekDay.FRIDAY).atHour(18).create();
+  ScriptApp.newTrigger('notifyWeekResults').timeBased()
+    .onWeekDay(ScriptApp.WeekDay.TUESDAY).atHour(9).create();
+  return 'scheduled: week open Wed 9am, reminder Fri 6pm, results Tue 9am';
+}
+
+function removeNotifyTriggers() {
+  const mine = { notifyWeekOpen: 1, notifyPickReminder: 1, notifyWeekResults: 1 };
+  let n = 0;
+  for (const t of ScriptApp.getProjectTriggers()) {
+    if (mine[t.getHandlerFunction()]) { ScriptApp.deleteTrigger(t); n++; }
+  }
+  return 'removed ' + n + ' notification trigger(s)';
 }

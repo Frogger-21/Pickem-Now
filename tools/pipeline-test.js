@@ -44,17 +44,23 @@ class FakeSheet {
   setFrozenRows() {}
 }
 
-function harness(sheets, scoresByLeague) {
+function harness(sheets, scoresByLeague, extraProps, creditsLeft) {
+  if (creditsLeft === undefined) creditsLeft = 400;
   const store = {};
   for (const [k, v] of Object.entries(sheets)) store[k] = new FakeSheet(k, v);
   const calls = [];
+  const sent = [];
+  const props = Object.assign({ ODDS_API_KEY: "test-key", SHEET_ID: "test-sheet" }, extraProps || {});
 
   const env = {
     PropertiesService: {
       getScriptProperties: () => ({
-        getProperty: (k) => ({ ODDS_API_KEY: "test-key", SHEET_ID: "test-sheet" }[k] || null)
+        getProperty: (k) => (k in props ? props[k] : null),
+        setProperty: (k, v) => { props[k] = String(v); },
+        deleteProperty: (k) => { delete props[k]; }
       })
     },
+    MailApp: { sendEmail: (o) => { sent.push(o); } },
     SpreadsheetApp: {
       openById: () => ({
         getName: () => "test",
@@ -66,9 +72,16 @@ function harness(sheets, scoresByLeague) {
       fetch: (url) => {
         calls.push(url);
         const league = url.indexOf("americanfootball_nfl") >= 0 ? "NFL" : "NCAAF";
+        /* "fail" makes the scores endpoint return a 500, so the grader's
+           error path can be exercised. */
+        if (scoresByLeague === "fail") {
+          return { getResponseCode: () => 500, getContentText: () => "upstream is down",
+                   getHeaders: () => ({}) };
+        }
         return {
           getResponseCode: () => 200,
-          getContentText: () => JSON.stringify(scoresByLeague[league] || [])
+          getContentText: () => JSON.stringify(scoresByLeague[league] || []),
+          getHeaders: () => ({ "x-requests-remaining": String(creditsLeft) })
         };
       }
     },
@@ -81,11 +94,11 @@ function harness(sheets, scoresByLeague) {
   const names = Object.keys(env);
   const api = new Function(
     ...names,
-    SRC + "return { runAutoGrade_, submitPicks_, getBoard_, getWeek_, getWeeks_, tallies_, seasonRoster_, currentSeason_, getSeasons_, getStats_, getMyPicks_, unitPnl_, marketBucket_," +
+    SRC + "return { runAutoGrade_, submitPicks_, getBoard_, getWeek_, getWeeks_, tallies_, seasonRoster_, currentSeason_, notifyWeekResults, notifyPickReminder, previewNotifications, leagueMembers_, notifyAdmin_, warnOnLowCredits_, autoGrade, getSeasons_, getStats_, getMyPicks_, unitPnl_, marketBucket_," +
           " runSelfTest, selfTestPicks_, SELFTEST_WEEK };"
   )(...names.map((n) => env[n]));
 
-  return { api, store, calls };
+  return { api, store, calls, sent, props };
 }
 
 
@@ -785,6 +798,145 @@ section("the current season is selectable before anyone has picked in it");
      silent fall-through would show last season's board under this year's name. */
   ok(api.getBoard_(now).length === 0, "its board is empty", api.getBoard_(now).length);
   ok(api.getBoard_("2025-26").length === 1, "while the played season still has one");
+}
+
+
+// -------------------------------------------------------------- notifications
+section("nothing is sent until it is switched on");
+{
+  const mk = (id, user, week, status) =>
+    [id, week, user.toLowerCase() + "@x.com", user, "NFL", "g" + id, "A @ B",
+     "moneyline", "ml", "KC", "", "{}", status, ""];
+  const rows = [PICK_HEADERS];
+  for (const u of ["Ann", "Bob"]) for (let i = 0; i < 5; i++) rows.push(mk(u + i, u, "2025-09-03", "win"));
+
+  const off = harness({ Picks: rows, Results: [] }, SCORES);
+  ok(off.api.notifyWeekResults() === "skipped", "results stays quiet with NOTIFY unset");
+  ok(off.sent.length === 0, "and sends nothing", off.sent.length);
+
+  const on = harness({ Picks: rows, Results: [] }, SCORES, { NOTIFY: "on" });
+  on.api.notifyWeekResults();
+  ok(on.sent.length === 2, "switched on, everybody hears about it", on.sent.length);
+  ok(/takes it/.test(on.sent[0].subject), "the subject names the winner", on.sent[0].subject);
+  ok(/Ann/.test(on.sent[0].body) && /Bob/.test(on.sent[0].body), "the body lists the week");
+  ok(/Season so far/.test(on.sent[0].body), "and where the season stands");
+
+  /* A trigger that fires twice, or a hand re-run, must not mean two emails. */
+  on.sent.length = 0;
+  const again = on.api.notifyWeekResults();
+  ok(/already sent/.test(again), "a second run is a no-op", again);
+  ok(on.sent.length === 0, "and stays silent");
+}
+
+section("the reminder goes only to people who owe picks");
+{
+  const mk = (id, user, week) =>
+    [id, week, user.toLowerCase() + "@x.com", user, "NFL", "g" + id, "A @ B",
+     "moneyline", "ml", "KC", "", "{}", "win", ""];
+  const rows = [PICK_HEADERS];
+  // Three players in the season; this week Ann is done, Bob half, Cid absent.
+  for (const u of ["Ann", "Bob", "Cid"])
+    for (let i = 0; i < 5; i++) rows.push(mk(u + "o" + i, u, "2025-09-03"));
+  for (let i = 0; i < 5; i++) rows.push(mk("a" + i, "Ann", "2025-09-10"));
+  for (let i = 0; i < 2; i++) rows.push(mk("b" + i, "Bob", "2025-09-10"));
+
+  const h = harness({ Picks: rows, Results: [] }, SCORES, { NOTIFY: "on" });
+  const members = h.api.leagueMembers_();
+  ok(members.length === 3, "three people in the league", members.length);
+
+  const detail = h.api.getWeek_("2025-09-10");
+  const short = detail.rows.filter((r) => !r.complete).map((r) => r.user).sort();
+  ok(short.join() === "Bob,Cid", "two of them are short", short.join());
+  /* Telling somebody who has already picked that they have not is how a
+     mailing list gets muted. */
+  ok(short.indexOf("Ann") < 0, "and the one who is done is not among them");
+}
+
+section("a silent failure becomes a loud one");
+{
+  const rows = [PICK_HEADERS,
+    row("p1", "a@x.com", "Ann", "NFL", "g1", "spread", "favorite", "Kansas City Chiefs", { line: -6.5 }, "pending")];
+
+  // No ADMIN_EMAIL: nothing to send to, and that must not itself throw.
+  const quiet = harness({ Picks: rows, Results: [] }, SCORES);
+  ok(quiet.api.notifyAdmin_("x", "y") === false, "with no admin address it reports false");
+  ok(quiet.sent.length === 0, "and sends nothing");
+
+  const h = harness({ Picks: rows, Results: [] }, SCORES, { ADMIN_EMAIL: "me@x.com" });
+  ok(h.api.notifyAdmin_("something broke", "details") === true, "with one, it sends");
+  ok(/Picks Game: something broke/.test(h.sent[0].subject), "prefixed so it is filterable",
+     h.sent[0].subject);
+}
+
+section("running out of credits is reported before it stops grading");
+{
+  /* A fresh set per harness. FakeSheet holds the array by reference and
+     grading writes statuses into it, so a shared fixture leaves the second run
+     with nothing pending - no fetch, no credit check, and a test that passes
+     for the wrong reason. */
+  const fresh = () => [PICK_HEADERS,
+    row("p1", "a@x.com", "Ann", "NFL", "g1", "spread", "favorite", "Kansas City Chiefs", { line: -6.5 }, "pending")];
+
+  const plenty = harness({ Picks: fresh(), Results: [] }, SCORES, { ADMIN_EMAIL: "me@x.com" }, 400);
+  plenty.api.runAutoGrade_();
+  ok(plenty.sent.length === 0, "a healthy balance says nothing", plenty.sent.length);
+
+  const thin = harness({ Picks: fresh(), Results: [] }, SCORES, { ADMIN_EMAIL: "me@x.com" }, 12);
+  thin.api.runAutoGrade_();
+  ok(thin.sent.length === 1, "a thin one warns", thin.sent.length);
+  ok(/low on API credits/.test(thin.sent[0].subject), "and says so", thin.sent[0].subject);
+  ok(/12 credits left/.test(thin.sent[0].body), "with the number", thin.sent[0].body.slice(0, 60));
+
+  /* Once per crossing, not once per call - the grader runs every six hours. */
+  thin.sent.length = 0;
+  thin.api.warnOnLowCredits_(12);
+  ok(thin.sent.length === 0, "it does not warn again at the same level");
+  thin.api.warnOnLowCredits_(400);
+  thin.api.warnOnLowCredits_(12);
+  ok(thin.sent.length === 1, "but does after recovering and dropping again", thin.sent.length);
+}
+
+section("preview says what would happen and sends nothing");
+{
+  const mk = (id, user, week) =>
+    [id, week, user.toLowerCase() + "@x.com", user, "NFL", "g" + id, "A @ B",
+     "moneyline", "ml", "KC", "", "{}", "win", ""];
+  const rows = [PICK_HEADERS];
+  for (let i = 0; i < 5; i++) rows.push(mk("a" + i, "Ann", "2025-09-03"));
+
+  const h = harness({ Picks: rows, Results: [] }, SCORES);
+  const msg = h.api.previewNotifications();
+  ok(/NOTIFY {8}: OFF/.test(msg), "it leads with the switch being off", msg.split("\n")[0]);
+  ok(/failures go unreported/.test(msg), "and that failures are unreported");
+  ok(/recipients {4}: 1/.test(msg), "counts who would hear", (msg.match(/recipients[^\n]*/) || [])[0]);
+  ok(h.sent.length === 0, "and sends nothing at all", h.sent.length);
+}
+
+
+section("grading that fails tells somebody");
+{
+  /* Removing this block is invisible to every other test: grading still
+     "works", it just stops reporting that it did not. */
+  const rows = [PICK_HEADERS,
+    row("p1", "a@x.com", "Ann", "NFL", "g1", "spread", "favorite", "Kansas City Chiefs", { line: -6.5 }, "pending")];
+
+  const h = harness({ Picks: rows, Results: [] }, "fail", { ADMIN_EMAIL: "me@x.com" });
+  const out = h.api.autoGrade();
+
+  ok(out.graded === 0, "nothing graded, as expected", out.graded);
+  ok((out.errors || []).length > 0, "the run records the failure", JSON.stringify(out.errors));
+  ok(h.sent.length === 1, "and somebody is told", h.sent.length);
+  ok(/grading hit errors/.test(h.sent[0].subject), "with a subject you can filter on",
+     h.sent[0].subject);
+  ok(/three days/.test(h.sent[0].body),
+     "and the reason it is urgent - scores expire", h.sent[0].body.slice(-120));
+
+  /* With no admin address there is nobody to tell, and that must not itself
+     break the run. */
+  const quiet = harness({ Picks: rows, Results: [] }, "fail");
+  const out2 = quiet.api.autoGrade();
+  ok((out2.errors || []).length > 0, "the failure is still recorded");
+  ok(quiet.sent.length === 0, "just not sent anywhere", quiet.sent.length);
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

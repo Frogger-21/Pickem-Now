@@ -1058,8 +1058,8 @@ function validateRules(){
       + '. Picks are filed by their week, so they would land in '
       + seasonOfDate(state.weekStart) + '.';
   } else if (ws && missing){
-    ws.textContent = 'This week has no ' + missing + ' games, and a slip needs two. '
-      + 'Nothing can be submitted for it - try a later week.';
+    ws.textContent = 'No ' + missing + ' games this week, and a slip needs two of each. '
+      + 'The season starts once both leagues are playing.';
   }
 
   el('#ruleMsg').textContent = rulesOK ? 'Ready to submit.'

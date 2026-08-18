@@ -823,8 +823,10 @@ function run4() {
          "the button names what is missing rather than counting down",
          h.get("#btnSubmit").textContent);
       ok(h.get("#btnSubmit").disabled === true, "and stays disabled");
-      ok(/a slip needs two/.test(h.get("#weekStatus").textContent),
+      ok(/a slip needs two of each/.test(h.get("#weekStatus").textContent),
          "with an explanation under the grid", h.get("#weekStatus").textContent);
+      ok(/season starts once both leagues are playing/.test(h.get("#weekStatus").textContent),
+         "framed as the rule working, not as something broken");
 
       /* An empty board is not the same claim - nothing has loaded yet. */
       h.api.state.games=[]; h.api.state.picks=[];
