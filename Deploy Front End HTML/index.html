@@ -421,6 +421,7 @@
           <option value="cum">Cumulative units</option>
           <option value="teamsW">Best teams</option>
           <option value="teamsL">Worst teams</option>
+          <option value="teamsPct">Win % by team</option>
         </select></div>
       <div class="qField"><label class="eyebrow" for="qPlayer">Player</label>
         <select id="qPlayer"></select></div>
@@ -1159,8 +1160,14 @@ const MARKET_LABEL = {
 const VIEW_TITLE = {
   players:'Win % by player', markets:'Win % by market', units:'Units by market',
   leagues:'NFL vs college', weeks:'Win % by week', cum:'Cumulative units',
-  teamsW:'Best teams', teamsL:'Worst teams'
+  teamsW:'Best teams', teamsL:'Worst teams', teamsPct:'Win % by team'
 };
+
+/* A team picked once and won reads 1.000, which says nothing. Thirty-eight of
+   the hundred-odd teams in a season are picked exactly once, so an unfiltered
+   ranking is a list of coin flips. Four decided picks is where the noise stops
+   drowning everything. */
+const TEAM_MIN_PICKS = 4;
 
 /* Horizontal bars. Values can be negative (units), so the scale is drawn
    around zero rather than assuming everything grows rightwards. */
@@ -1316,6 +1323,25 @@ function renderQuery(){
       return { label:String(w.week).slice(5), value:run, note:unitText(run) }; });
     drawLine(chart, pts, { mid:0 }); drew=true;
     tail='Running total of units. Above the dashed line is a profitable season to that point.';
+
+  }else if(view==='teamsPct'){
+    const all=(node.teams||[]).filter(t=>(t.w+t.l)>0);
+    const enough=all.filter(t=>(t.w+t.l)>=TEAM_MIN_PICKS);
+    rows=enough.slice()
+      .sort((a,b)=>{
+        const pa=a.w/(a.w+a.l), pb=b.w/(b.w+b.l);
+        /* Equal rate, more picks first - 9-2 is a better bet than 4-0. */
+        return (pb-pa)||((b.w+b.l)-(a.w+a.l))||a.team.localeCompare(b.team);
+      })
+      .slice(0,15)
+      .map(t=>({ label:t.team, value:t.w/(t.w+t.l),
+                 note:recText(t)+'  '+pctText(t)+'  '+unitText(t.units), cls:'win' }));
+    const cut=all.length-enough.length;
+    tail='Ranked by win rate, spread and moneyline picks only. '
+       + 'Teams picked fewer than '+TEAM_MIN_PICKS+' times are left out'
+       + (cut?' - that is '+cut+' of '+all.length+' here':'')
+       + ', because one pick that won reads 1.000 and means nothing. '
+       + 'Equal rates are ordered by how many picks back them.';
 
   }else if(view==='teamsW'||view==='teamsL'){
     const wantWins=(view==='teamsW');

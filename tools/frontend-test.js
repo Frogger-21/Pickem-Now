@@ -203,7 +203,7 @@ function run3() {
     ok(/Ann/.test(h.get("#qPlayer").innerHTML) && /Bob/.test(h.get("#qPlayer").innerHTML),
        "with every player");
 
-    for (const view of ["markets", "units", "leagues", "weeks", "cum", "teamsW", "teamsL", "players"]) {
+    for (const view of ["markets", "units", "leagues", "weeks", "cum", "teamsW", "teamsL", "teamsPct", "players"]) {
       h.get("#qView").value = view;
       let threw = null;
       try { h.api.renderQuery(); } catch (e) { threw = e; }
@@ -594,6 +594,61 @@ function run4() {
       const shown = (mlCell.match(/\+260/g) || []).length;
       ok(shown === 1, "the moneyline price appears once, not twice", shown);
       ok(/data-odds="260"/.test(mlCell), "and the real price still reaches the pick");
+    }
+
+    section("win % by team hides the coin flips");
+    {
+      const t = (team,w,l,units) => ({ team:team, w:w, l:l, p:0, n:w+l,
+                                       pct:(w+l)?w/(w+l):0, units:units });
+      const data = JSON.parse(JSON.stringify(STATS));
+      data.stats.__all__.teams = [
+        t("Buffalo Bills", 9, 2, 4.89),        // .818 over 11 - real
+        t("Miami Hurricanes", 6, 0, 4.70),     // 1.000 over 6 - real
+        t("Lucky Once", 1, 0, 0.91),           // 1.000 over 1 - noise
+        t("Lucky Twice", 2, 0, 1.82),          // 1.000 over 2 - noise
+        t("Lucky Thrice", 3, 0, 2.73),         // 1.000 over 3 - still under the floor
+        t("Four Flat", 2, 2, -0.18),           // .500 over 4 - qualifies
+        t("Never Picked", 0, 0, 0)             // no decided picks at all
+      ];
+      const hh = harness({ seasons: SEASONS, stats: data });
+      await hh.api.loadSeasons();
+      await hh.api.buildQueries();
+      hh.get("#qView").value = "teamsPct";
+      hh.api.renderQuery();
+      const html = hh.get("#qChart").innerHTML, note = hh.get("#qNote").textContent;
+
+      ok(/Miami Hurricanes/.test(html), "a 6-0 team makes it");
+      ok(/Buffalo Bills/.test(html), "and so does 9-2");
+      ok(!/Lucky Once/.test(html) && !/Lucky Twice/.test(html) && !/Lucky Thrice/.test(html),
+         "but 1-0, 2-0 and 3-0 do not - they would all read 1.000",
+         (html.match(/Lucky \w+/g) || []).join());
+      ok(/Four Flat/.test(html), "four decided picks is enough to qualify");
+      ok(!/Never Picked/.test(html), "a team with no decided picks is not ranked");
+
+      // Miami is 1.000 and Buffalo .818, so Miami leads.
+      ok(html.indexOf("Miami Hurricanes") < html.indexOf("Buffalo Bills"),
+         "ranked by rate, highest first");
+      ok(/9-2/.test(html) && /\.818/.test(html), "the record and rate are both shown");
+      ok(/fewer than 4 times are left out/.test(note), "the floor is stated, not hidden", note);
+      ok(/3 of 6/.test(note), "along with how many teams it removed", note);
+    }
+
+    section("equal win rates are broken by sample size");
+    {
+      const t = (team,w,l) => ({ team:team, w:w, l:l, p:0, n:w+l, pct:1, units:0 });
+      const data = JSON.parse(JSON.stringify(STATS));
+      /* Named so alphabetical order gives the WRONG answer: if the tiebreak
+         fell through to localeCompare, "Alpha" would lead on 4 picks. */
+      data.stats.__all__.teams = [ t("Alpha Few", 4, 0), t("Zulu Many", 9, 0) ];
+      const hh = harness({ seasons: SEASONS, stats: data });
+      await hh.api.loadSeasons();
+      await hh.api.buildQueries();
+      hh.get("#qView").value = "teamsPct";
+      hh.api.renderQuery();
+      const html = hh.get("#qChart").innerHTML;
+      ok(html.indexOf("Zulu Many") < html.indexOf("Alpha Few"),
+         "both are 1.000, so the one with more picks behind it leads - not the "
+         + "one that sorts first alphabetically");
     }
 
     section("a week that cannot be played says so");
