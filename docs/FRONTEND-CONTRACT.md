@@ -442,7 +442,112 @@ Mobile is the priority. Worth knowing about the current page:
 
 ---
 
-## 8. Checking the result
+---
+
+## 8. Client state, if you are replacing the JavaScript
+
+§3 is enough when the JavaScript is kept and only markup and CSS change — the
+recommended path. This section is what you additionally need if the JS is being
+rewritten.
+
+### 8.1 Persisted state
+
+Four keys, and the storage choice matters in each case:
+
+| Key | Where | Holds | Why there |
+|---|---|---|---|
+| `pg_name` | `localStorage` | display name | survives between visits; nobody wants to retype it weekly |
+| `pg_email` | `localStorage` | identity for submit and My Picks | same |
+| `pg_api` | `localStorage` | backend URL override | development only; a stale one silently breaks the live site, hence `?reset=1` |
+| `pg_season` | **`sessionStorage`** | selected season | must reset to newest on a fresh visit — see §4 |
+
+There is no login. The email field *is* the identity, and the backend trusts it.
+That is fine for a league of friends and worth knowing before designing anything
+that looks like authentication.
+
+### 8.2 In-memory state
+
+```js
+const state = {
+  name: null, email: null,
+  weekStart: startOfWedWeek(new Date()),  // Date, the slate's Wednesday
+  gamesAll: [],   // every game fetched, both leagues
+  games: [],      // gamesAll after the week and sport filters
+  picks: []       // the working set, max 5
+};
+```
+
+A pick under construction has the same shape as the submit payload in §2.
+
+### 8.3 Selecting picks
+
+A chip is identified by:
+
+```
+`${game.id}|${market}|${kind}|${selection}`
+```
+
+Clicking an unselected chip adds that pick; clicking a selected one removes it.
+A chip carries class `selected` when its key is in `state.picks`. Chips on a
+started game are `disabled` and carry no click handler at all (§4).
+
+### 8.4 The rules bar
+
+Live counters, recomputed on every pick change. The backend enforces the same
+rules, so the copy can be shared:
+
+| Element | Content |
+|---|---|
+| `ruleNFL` | `NFL: n/2` |
+| `ruleCFB` | `CFB: n/2` |
+| `ruleOU` | `O/U: n Over / n Under` |
+| `ruleFD` | `Fav/Dog: n Fav / n Dog` |
+| `ruleML` | `ML: n/1 (odds > -200)`, plus `- invalid odds` when the price fails |
+| `ruleMsg` | `Ready to submit.` or the constraint reminder |
+
+`btnSubmit` is enabled only when **all** rules pass **and** the email field is
+non-empty. Do not relax that client-side; the server refuses anyway, and an
+error after five taps is worse UX than a disabled button.
+
+### 8.5 Status messages
+
+Two classes carry the whole convention:
+
+- `class="status alert ok"` — green, success
+- `class="status alert err"` — red, failure
+
+Used by `ruleMsg`, `submitStatus` and `weekStatus`. Keep the class names or
+restyle them, but keep the two-state distinction.
+
+### 8.6 Admin endpoints are backend-only
+
+`fn=isAdmin` and `POST fn=grade` exist and work, but **nothing in the current
+frontend calls them** — manual grading is done from the Apps Script editor.
+There is no admin UI to redesign. Building one is a legitimate addition, not a
+port.
+
+---
+
+## 9. Where the current page is weakest
+
+Offered as a starting list rather than a specification, from having worked in it:
+
+- **The odds grid is desktop-shaped.** `minmax(280px,1fr)` cards with market
+  chips wrapping inside them. On a phone the chips wrap to three lines and the
+  card gets tall, so a slate of forty games is a very long scroll with no way to
+  jump.
+- **No sense of progress.** Five picks with six constraints, and the only
+  feedback is a row of counters above the fold that you scroll away from while
+  actually picking.
+- **The scoreboard is a seven-column table** on a 360px screen. `My Picks`
+  already solves this with the `data-label` card pattern; the board does not.
+- **Queries has no empty state worth the name** — just "Nothing to show".
+- **Nothing indicates staleness.** Grading runs every six hours, so a result can
+  be up to six hours behind, and the page never says when it last updated.
+
+---
+
+## 10. Checking the result
 
 ```
 node tools/build-test.js       # the Netlify build still works
