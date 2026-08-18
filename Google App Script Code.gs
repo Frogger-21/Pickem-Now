@@ -655,6 +655,70 @@ function pgReadUsers_() {
   });
 }
 
+const SUBS_SHEET   = 'Submissions';
+const SUBS_HEADERS = ['id', 'at', 'week', 'email', 'user', 'picks', 'replaced'];
+
+function sheetReadSubmissions_() {
+  const sh = openSheet_(SUBS_SHEET);
+  ensureHeaders_(sh, SUBS_HEADERS);
+  const data = sh.getDataRange().getValues();
+  if (data.length < 2) return [];
+  const H = headerIndex_(data[0]);
+  const out = [];
+  for (let i = 1; i < data.length; i++) {
+    if (!String(data[i][H.id] || '')) continue;
+    out.push({
+      id:       String(data[i][H.id]),
+      at:       data[i][H.at],
+      week:     String(data[i][H.week] || ''),
+      email:    String(data[i][H.email] || ''),
+      user:     String(data[i][H.user] || ''),
+      picks:    Number(data[i][H.picks]) || 0,
+      replaced: Number(data[i][H.replaced]) || 0
+    });
+  }
+  return out;
+}
+
+function sheetAppendSubmission_(s) {
+  const sh = openSheet_(SUBS_SHEET);
+  ensureHeaders_(sh, SUBS_HEADERS);
+  sh.getRange(sh.getLastRow() + 1, 1, 1, SUBS_HEADERS.length).setValues([[
+    s.id, s.at, s.week, s.email, s.user, s.picks, s.replaced
+  ]]);
+  return 1;
+}
+
+function pgReadSubmissions_() {
+  return pgSelectAll_('submissions', 'at.asc').map(function (r) {
+    return {
+      id:       String(r.id || ''),
+      at:       r.at ? new Date(r.at) : '',
+      week:     String(r.week || ''),
+      email:    String(r.email || ''),
+      user:     String(r.user_name || ''),
+      picks:    Number(r.picks) || 0,
+      replaced: Number(r.replaced) || 0
+    };
+  });
+}
+
+function pgAppendSubmission_(s) {
+  pgFetch_('post', 'submissions', [{
+    id: s.id,
+    at: pgTime_(s.at) || new Date().toISOString(),
+    week: String(s.week || ''),
+    email: String(s.email || ''),
+    user_name: String(s.user || ''),
+    picks: Number(s.picks) || 0,
+    replaced: Number(s.replaced) || 0
+  }], 'return=minimal');
+  return 1;
+}
+
+function readSubmissions_()      { return usingPostgres_() ? pgReadSubmissions_()  : sheetReadSubmissions_(); }
+function appendSubmission_(s)    { return usingPostgres_() ? pgAppendSubmission_(s) : sheetAppendSubmission_(s); }
+
 // ===== HTTP HANDLERS =========================================================
 // GET: odds (league=nfl|ncaaf[,nocache=1]), mine (email), board, isAdmin (email)
 const GET_FNS = ['odds', 'mine', 'board', 'weeks', 'week', 'weekpicks', 'seasons', 'stats', 'isAdmin'];
@@ -687,7 +751,8 @@ function capabilities_() {
     stats:     typeof getStats_         === 'function',
     kickofflock: typeof checkKickoffLock_ === 'function',
     notify:      typeof notifyWeekOpen     === 'function',
-    weekpicks:   typeof getWeekPicks_      === 'function'
+    weekpicks:   typeof getWeekPicks_      === 'function',
+    audit:       typeof readSubmissions_   === 'function'
   };
   return Object.keys(has).filter(function (k) { return has[k]; });
 }
@@ -1306,6 +1371,20 @@ function submitPicks_(email, user, picks) {
 
   if (!rows.length) return { count: 0, replaced };
   insertPicks_(rows);
+
+  /* Log the submission itself. A resubmission deletes the old picks, so
+     without this the history of who changed what is simply gone. A failure
+     here must not fail the submission - the picks are already saved, and an
+     audit note is worth less than the thing it is auditing. */
+  try {
+    appendSubmission_({
+      id: Utilities.getUuid(), at: new Date(), week: week,
+      email: email, user: user || email, picks: rows.length, replaced: replaced
+    });
+  } catch (e) {
+    Logger.log('submission not logged: ' + e.message);
+  }
+
   return { count: rows.length, replaced };
 }
 
@@ -3354,6 +3433,13 @@ function getWeekPicks_(week, email) {
           || a.user.localeCompare(b.user);
     });
 
+  const log = submissionsForWeek_(wk);
+  for (const pl of players) {
+    const l = log[pl.user];
+    pl.submittedAt = l ? l.lastAt : '';
+    pl.submissions = l ? l.count : 0;
+  }
+
   return {
     week: wk,
     expected: PICKS_PER_WEEK,
@@ -3361,4 +3447,46 @@ function getWeekPicks_(week, email) {
     winners: detail.winners,
     players: players
   };
+}
+
+// ===== SUBMISSION LOG ========================================================
+// Picks carry a timestamp, but a resubmission deletes the old rows and writes
+// new ones - so the picks alone can only ever say when somebody last wrote,
+// never that they wrote three times. This records the act of submitting.
+//
+// It does not prevent anybody claiming to be anybody: the email field is still
+// the identity. What it does is make that visible, which among eight friends
+// is usually the thing actually wanted.
+//
+// Apps Script does not expose the caller's IP, so there is no "from where"
+// here. Saying so is better than implying a completeness that is not there.
+
+/**
+ * What the log knows about one week, keyed by player name.
+ *
+ * A missing log is not an error - the table may not exist yet, and a
+ * submission history is a nicety. Losing it must never stop a week rendering.
+ */
+function submissionsForWeek_(week) {
+  const out = {};
+  let rows = [];
+  try { rows = readSubmissions_(); } catch (_) { return out; }
+
+  for (const s of rows) {
+    if (s.week !== String(week)) continue;
+    const u = String(s.user || '').trim();
+    if (!u) continue;
+    const at = s.at ? new Date(s.at).getTime() : 0;
+    if (!out[u]) out[u] = { count: 0, first: at, last: at, replaced: 0 };
+    const n = out[u];
+    n.count++;
+    n.replaced += s.replaced;
+    if (at && (!n.first || at < n.first)) n.first = at;
+    if (at && at > n.last) n.last = at;
+  }
+  for (const u of Object.keys(out)) {
+    out[u].firstAt = out[u].first ? new Date(out[u].first).toISOString() : '';
+    out[u].lastAt  = out[u].last  ? new Date(out[u].last).toISOString()  : '';
+  }
+  return out;
 }

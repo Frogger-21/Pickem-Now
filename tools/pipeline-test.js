@@ -127,7 +127,7 @@ function oddsHarness(pickRows, oddsFeed) {
   };
   const names = Object.keys(env);
   const api = new Function(...names,
-    SRC + "return { checkKickoffLock_, pickSignature_, kickoffMap_, getWeekPicks_, pickIsPublic_ };")(...names.map((n) => env[n]));
+    SRC + "return { checkKickoffLock_, pickSignature_, kickoffMap_, getWeekPicks_, pickIsPublic_, submitPicks_, readSubmissions_, appendSubmission_, submissionsForWeek_ };")(...names.map((n) => env[n]));
   return { api, store };
 }
 
@@ -1031,6 +1031,74 @@ section("a player who has not picked is a visible blank");
   const bob = out.players.filter((x) => x.user === "Bob")[0];
   ok(bob.picks === 0 && bob.rows.length === 0, "as an empty slip, not a missing row");
   ok(out.players[out.players.length - 1].user === "Bob", "and sorts last", names.join());
+}
+
+
+section("the log records the act of submitting, not just the result");
+{
+  const g = { id:"g1", league:"NFL", kickoff:new Date(Date.now()+864e5).toISOString(),
+    home_team:"Kansas City Chiefs", away_team:"Buffalo Bills",
+    spread:{ fav:"home", line:-3, favPrice:-110, dogPrice:-110 },
+    totals:{ total:44, overPrice:-110, underPrice:-110 },
+    moneyline:{ home:-150, away:130 } };
+  const pick = (kind, sel, meta) => ({ week:"2026-09-09", league:"NFL", gameId:"g1",
+    matchup:"Buffalo Bills @ Kansas City Chiefs", market:"spread", kind:kind,
+    selection:sel, odds:-110, meta:meta });
+
+  const h = oddsHarness([PICK_HEADERS], { NFL:[g], NCAAF:[] });
+
+  h.api.submitPicks_("a@x.com", "Ann", [pick("favorite","Kansas City Chiefs",{line:-3})]);
+  let log = h.api.readSubmissions_();
+  ok(log.length === 1, "one submission logged", log.length);
+  ok(log[0].user === "Ann" && log[0].week === "2026-09-09", "with who and which week");
+  ok(log[0].picks === 1 && log[0].replaced === 0, "and nothing replaced the first time",
+     log[0].picks + "/" + log[0].replaced);
+
+  /* Resubmitting deletes the old picks, so without the log the fact that it
+     happened at all would simply be gone. */
+  h.api.submitPicks_("a@x.com", "Ann", [pick("underdog","Buffalo Bills",{line:3})]);
+  log = h.api.readSubmissions_();
+  ok(log.length === 2, "the edit is a second entry, not an overwrite", log.length);
+  ok(log[1].replaced === 1, "and records what it displaced", log[1].replaced);
+
+  const week = h.api.submissionsForWeek_("2026-09-09");
+  ok(week.Ann.count === 2, "the week view counts both", week.Ann.count);
+  ok(week.Ann.replaced === 1, "and the replacements");
+  ok(week.Ann.lastAt >= week.Ann.firstAt, "with first and last the right way round");
+}
+
+section("a broken log never breaks a submission");
+{
+  /* The picks are already saved by the time the log is written. An audit note
+     is worth less than the thing it audits. */
+  const g = { id:"g1", league:"NFL", kickoff:new Date(Date.now()+864e5).toISOString(),
+    home_team:"Kansas City Chiefs", away_team:"Buffalo Bills",
+    spread:{ fav:"home", line:-3, favPrice:-110, dogPrice:-110 },
+    totals:{ total:44, overPrice:-110, underPrice:-110 }, moneyline:{ home:-150, away:130 } };
+  const h = oddsHarness([PICK_HEADERS], { NFL:[g], NCAAF:[] });
+
+  /* Sabotage the log sheet itself, so appendSubmission_ really throws rather
+     than the test merely asserting it does not. */
+  const boom = () => { throw new Error("submissions unavailable"); };
+  h.store.Submissions = { getLastRow: boom, getLastColumn: boom, getDataRange: boom,
+                          getRange: boom, clear: boom, setFrozenRows: boom };
+
+  let out = null, threw = null;
+  try {
+    out = h.api.submitPicks_("a@x.com", "Ann", [{ week:"2026-09-09", league:"NFL", gameId:"g1",
+      matchup:"Buffalo Bills @ Kansas City Chiefs", market:"spread", kind:"favorite",
+      selection:"Kansas City Chiefs", odds:-110, meta:{ line:-3 } }]);
+  } catch (e) { threw = e; }
+
+  ok(!threw, "the submission still succeeds", threw && threw.message);
+  ok(out && out.count === 1, "and reports the picks saved", out && out.count);
+  ok(h.store.Picks.rows.length === 2, "the picks really are in the sheet",
+     h.store.Picks.rows.length - 1);
+
+  /* Reading a broken log is the same story: a missing history must not stop a
+     week rendering. */
+  ok(JSON.stringify(h.api.submissionsForWeek_("2026-09-09")) === "{}",
+     "and a log that cannot be read comes back empty rather than throwing");
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

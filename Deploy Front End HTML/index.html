@@ -260,6 +260,9 @@
     .pk.win .res{color:var(--win)} .pk.loss .res{color:var(--loss)}
     .pk.hidden-pick .sel{color:var(--faint);font-style:italic}
     .slipEmpty{padding:11px 12px;color:var(--faint);font-size:12.5px}
+    .subNote{padding:5px 12px 7px;font-family:var(--mono);font-size:9px;
+             letter-spacing:.08em;color:var(--faint);text-transform:uppercase;
+             border-bottom:1px solid oklch(0.22 0.008 60)}
 
     /* ------------------------------------------------------------- queries */
     .qControls{display:grid;grid-template-columns:1fr;gap:8px;margin-bottom:12px}
@@ -1441,6 +1444,19 @@ async function buildWeekSlips(week){
     + players.map(p => slipCardHtml(p, j.expected || 5)).join('');
 }
 
+/* "Submitted Thu 6:42pm", and a count when it was not the only time. The log
+   does not stop anybody claiming to be anybody - the email is still the
+   identity - it makes the claim visible, which is the useful part. */
+function submittedNote(p){
+  if (!p.submittedAt) return '';
+  const d = new Date(p.submittedAt);
+  if (isNaN(d.getTime())) return '';
+  const when = d.toLocaleString(undefined,
+    { weekday:'short', hour:'numeric', minute:'2-digit' }).toLowerCase();
+  const edits = (p.submissions || 0) > 1 ? ', edited ' + (p.submissions - 1) + 'x' : '';
+  return 'submitted ' + when + edits;
+}
+
 function slipCardHtml(p, expected){
   const mine = p.rows.some(r => r.own);
   const rec = p.picks
@@ -1449,6 +1465,7 @@ function slipCardHtml(p, expected){
   const note = !p.picks ? 'no picks yet'
              : p.picks < expected ? p.picks + ' of ' + expected
              : '';
+  const sub = submittedNote(p);
 
   const body = p.rows.length
     ? p.rows.map(pickLineHtml).join('')
@@ -1459,7 +1476,9 @@ function slipCardHtml(p, expected){
     + (mine ? '<span class="tag">you</span>' : '')
     + (note ? '<span class="tag">' + esc(note) + '</span>' : '')
     + (rec ? '<span class="rec">' + esc(rec) + '</span>' : '')
-    + '</div>' + body + '</div>';
+    + '</div>'
+    + (sub ? '<div class="subNote">' + esc(sub) + '</div>' : '')
+    + body + '</div>';
 }
 
 function pickLineHtml(r){
