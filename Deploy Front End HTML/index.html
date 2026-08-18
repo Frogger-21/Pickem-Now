@@ -131,9 +131,21 @@
     .cell.selected .main{color:var(--accent)}
     /* Illegal cells dim and stop responding. The grid never offers a slip the
        server would refuse, so there is no error banner to dismiss. */
-    .cell.dead,.cell.blank{opacity:.28;pointer-events:none}
+    /* Dim but still tappable. A title tooltip never appears on a phone, so a
+       dead cell that swallowed the tap would leave you with no way to find out
+       why - which is exactly the confusion this is here to prevent. */
+    .cell.dead,.cell.blank{opacity:.28;cursor:not-allowed}
     .game.started{opacity:.55}
-    .game.started .cell{pointer-events:none}
+    #cellNote{
+      position:fixed;left:50%;transform:translateX(-50%);bottom:172px;z-index:40;
+      background:oklch(0.26 0.008 60);border:1px solid var(--line);border-radius:999px;
+      padding:8px 15px;font-size:12.5px;color:var(--text);white-space:nowrap;
+      max-width:92vw;overflow:hidden;text-overflow:ellipsis;
+      box-shadow:0 6px 20px rgba(0,0,0,.45);opacity:0;pointer-events:none;
+      transition:opacity .15s;
+    }
+    #cellNote.on{opacity:1}
+    @media (min-width:900px){ #cellNote{bottom:24px} }
 
     /* ------------------------------------------------------------ slot bar */
     #picksList{position:fixed;left:0;right:0;bottom:0;z-index:30;
@@ -408,6 +420,8 @@
       <div class="qRail" id="qRail"></div>
     </div>
   </section>
+
+  <div id="cellNote" aria-live="polite"></div>
 
   <!-- ======================================================== HALL OF FAME -->
   <section id="view-hof" class="view hidden"><div id="hofBody"></div></section>
@@ -704,6 +718,20 @@ function renderGames(){
                  c.dataset.odds === '' ? '' : Number(c.dataset.odds));
     });
   });
+  /* A dead cell answers the question instead of ignoring the tap. */
+  els('#games .cell.dead, #games .cell.blank').forEach(c => {
+    c.addEventListener('click', () => sayWhy(c.getAttribute('title')));
+  });
+}
+
+let cellNoteTimer = null;
+function sayWhy(text){
+  const n = el('#cellNote');
+  if (!n || !text) return;
+  n.textContent = text;
+  n.classList.add('on');
+  clearTimeout(cellNoteTimer);
+  cellNoteTimer = setTimeout(() => n.classList.remove('on'), 2600);
 }
 
 /* Why a cell is dim, in words. Without this a dimmed cell is indistinguishable

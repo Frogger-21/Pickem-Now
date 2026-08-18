@@ -86,7 +86,8 @@ function harness(apiResponses) {
 
   const exported = "return { SEASON, apiUrl, loadSeasons, buildQueries, renderQuery,"
     + " drawBars, esc, pctText, recText, unitText, Q, gameStarted, state, renderGames,"
-    + " togglePick, renderPicks, validateRules, cellBlocked, shortName, boot: document._boot };";
+    + " togglePick, renderPicks, validateRules, cellBlocked, shortName, sayWhy,"
+    + " boot: document._boot };";
 
   const fn = new Function(
     "localStorage", "sessionStorage", "location", "console", "document", "fetch", "window",
@@ -388,6 +389,42 @@ function run4() {
       h.api.renderGames();
       ok(/title="This game has already kicked off"/.test(h.get("#games").innerHTML),
          "as does a started game");
+    }
+
+    section("tapping a dead cell says why, on a phone as well as a desktop");
+    {
+      /* The real case: two college picks fills CFB 2/2, so every college spread
+         and total dims - while college moneylines stay live, because the ML is
+         exempt from the league count. Silence there reads as a broken grid. */
+      const cfb = (id) => ({ id:id, league:"NCAAF", kickoff:soon,
+        home_team:id+" Home", away_team:id+" Away",
+        spread:{ fav:"home", line:-3, favPrice:-110, dogPrice:-110 },
+        totals:{ total:44, overPrice:-110, underPrice:-110 },
+        moneyline:{ home:-150, away:150 } });
+      const c1=cfb("c1"), c2=cfb("c2"), c3=cfb("c3");
+      h.api.state.games=[c1,c2,c3]; h.api.state.gamesAll=[c1,c2,c3]; h.api.state.picks=[];
+
+      h.api.togglePick(c1,"spread","favorite","c1 Home",{line:-3},-110);
+      h.api.togglePick(c2,"total","over","Over",{total:44},-110);
+
+      const html = h.get("#games").innerHTML;
+      ok(/title="You already have two picks in this league"/.test(html),
+         "the league-full reason is on the cells");
+
+      // The moneyline is exempt, so it must NOT be dimmed for that reason.
+      const c3block = html.split('data-game="c3"');
+      const mlPart = c3block.filter(x => /data-market="moneyline"/.test(x))[0] || "";
+      ok(h.api.cellBlocked(c3,"moneyline","ml",150) === null,
+         "college moneylines stay live once CFB is full",
+         h.api.cellBlocked(c3,"moneyline","ml",150));
+
+      h.api.sayWhy("You already have two picks in this league");
+      ok(h.get("#cellNote").textContent === "You already have two picks in this league",
+         "and tapping one shows it", h.get("#cellNote").textContent);
+      ok(h.get("#cellNote").classList.contains("on"), "the note is visible");
+      h.api.sayWhy("");
+      ok(h.get("#cellNote").textContent === "You already have two picks in this league",
+         "an empty reason does not blank the note");
     }
 
     section("a game with no moneyline shows a blank, not a broken cell");
