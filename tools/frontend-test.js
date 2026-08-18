@@ -497,6 +497,16 @@ function run4() {
     section("the slot bar mirrors the rules");
     {
       h.api.state.picks = [];
+      /* Both leagues on the board: the countdown only makes sense when the week
+         is actually playable. A single-league board is its own case, below. */
+      h.api.state.games = [
+        { id:"mx1", league:"NFL",   kickoff:soon, home_team:"A", away_team:"B",
+          spread:{ fav:"home", line:-3, favPrice:-110, dogPrice:-110 },
+          totals:{ total:44, overPrice:-110, underPrice:-110 }, moneyline:{ home:-150, away:130 } },
+        { id:"mx2", league:"NCAAF", kickoff:soon, home_team:"C", away_team:"D",
+          spread:{ fav:"home", line:-3, favPrice:-110, dogPrice:-110 },
+          totals:{ total:44, overPrice:-110, underPrice:-110 }, moneyline:{ home:-150, away:130 } }
+      ];
       h.api.renderPicks(); h.api.validateRules();
       ok((h.get("#slotRow").innerHTML.match(/class="slot"/g) || []).length === 5,
          "five empty slots");
@@ -584,6 +594,38 @@ function run4() {
       const shown = (mlCell.match(/\+260/g) || []).length;
       ok(shown === 1, "the moneyline price appears once, not twice", shown);
       ok(/data-odds="260"/.test(mlCell), "and the real price still reaches the pick");
+    }
+
+    section("a week that cannot be played says so");
+    {
+      /* College opens two weeks before the NFL. The week of Aug 26 2026 has
+         eight college games and zero NFL ones, so a slip requiring two NFL
+         picks can never be completed - and "Pick 2 more" was telling people to
+         do something impossible. */
+      const cfbOnly = (id) => ({ id:id, league:"NCAAF", kickoff:soon,
+        home_team:id+" Home", away_team:id+" Away",
+        spread:{ fav:"home", line:-3, favPrice:-110, dogPrice:-110 },
+        totals:{ total:44, overPrice:-110, underPrice:-110 },
+        moneyline:{ home:-150, away:130 } });
+      const a=cfbOnly("w1"), b=cfbOnly("w2");
+      h.api.state.games=[a,b]; h.api.state.gamesAll=[a,b]; h.api.state.picks=[];
+      h.api.togglePick(a,"spread","favorite","w1 Home",{line:-3},-110);
+      h.api.togglePick(b,"total","over","Over",{total:44},-110);
+      h.api.validateRules();
+
+      ok(/No NFL games this week/.test(h.get("#btnSubmit").textContent),
+         "the button names what is missing rather than counting down",
+         h.get("#btnSubmit").textContent);
+      ok(h.get("#btnSubmit").disabled === true, "and stays disabled");
+      ok(/a slip needs two/.test(h.get("#weekStatus").textContent),
+         "with an explanation under the grid", h.get("#weekStatus").textContent);
+
+      /* An empty board is not the same claim - nothing has loaded yet. */
+      h.api.state.games=[]; h.api.state.picks=[];
+      h.api.validateRules();
+      ok(!/No NFL games/.test(h.get("#btnSubmit").textContent),
+         "an unloaded board makes no claim about any league",
+         h.get("#btnSubmit").textContent);
     }
 
     section("a stats failure is reported, not silent");

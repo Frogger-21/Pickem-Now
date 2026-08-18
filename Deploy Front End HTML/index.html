@@ -729,6 +729,8 @@ function renderGames(){
   const sortBtn = el('#btnSort'); if (sortBtn) sortBtn.textContent = SORTS[state.sort];
   const ws = el('#weekStatus');
   if (ws) ws.textContent = list.length ? list.length + ' game' + (list.length===1?'':'s') + ' shown' : '';
+  /* validateRules may have something more important to say about this week. */
+  validateRules();
 
   if (!list.length){
     root.innerHTML = '<div class="empty">'
@@ -946,6 +948,22 @@ function validateRules(){
   const rulesOK = (nfl===2 && cfb===2 && over===1 && under===1 && fav===1 && dog===1 && mlOk);
   const hasEmail = (el('#emailInput').value||'').trim().length > 0;
 
+  /* College opens two weeks before the NFL does, so an early week can have no
+     NFL games at all - and the slip needs two. Counting what is actually on
+     the board stops the button saying "pick 2 more" when there is nothing left
+     to pick. */
+  const avail = { NFL:0, NCAAF:0 };
+  for (const g of state.games){
+    const lg = String(g.league || '').toUpperCase();
+    if (avail[lg] !== undefined) avail[lg]++;
+  }
+  /* Only meaningful once a board exists. With nothing loaded at all, every
+     league looks absent, and "no college games this week" would be a confident
+     lie about a page that simply has not fetched yet. */
+  const missing = !state.games.length ? null
+                : (nfl < 2 && !avail.NFL) ? 'NFL'
+                : (cfb < 2 && !avail.NCAAF) ? 'college' : null;
+
   const tally = el('#leagueTally');
   if (tally){
     tally.textContent = 'NFL ' + nfl + '/2 · CFB ' + cfb + '/2';
@@ -957,7 +975,14 @@ function validateRules(){
   btn.classList.toggle('ready', rulesOK && hasEmail);
   btn.textContent = rulesOK
     ? (hasEmail ? 'Submit 5 picks' : 'Add your email to submit')
-    : 'Pick ' + (5 - state.picks.length) + ' more';
+    : (missing ? 'No ' + missing + ' games this week'
+               : 'Pick ' + (5 - state.picks.length) + ' more');
+
+  const ws = el('#weekStatus');
+  if (ws && missing){
+    ws.textContent = 'This week has no ' + missing + ' games, and a slip needs two. '
+      + 'Nothing can be submitted for it - try a later week.';
+  }
 
   el('#ruleMsg').textContent = rulesOK ? 'Ready to submit.'
     : 'Selections must satisfy all constraints (incl. 1 ML > -200).';
