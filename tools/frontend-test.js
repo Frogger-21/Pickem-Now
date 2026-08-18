@@ -22,7 +22,8 @@ const section = (t) => console.log("\n" + t);
 // ------------------------------------------------------------------ stub DOM
 function makeEl(id) {
   const e = {
-    id, value: "", textContent: "", innerHTML: "", dataset: {},
+    id, value: "", textContent: "", innerHTML: "", dataset: {}, style: {},
+    rows: 0, select() {}, setAttribute() {}, removeAttribute() {},
     _handlers: {}, _children: [], classList: {
       _s: new Set(),
       add(c) { this._s.add(c); }, remove(c) { this._s.delete(c); },
@@ -65,12 +66,15 @@ function harness(apiResponses) {
     },
     location: { protocol: "https:", hostname: "quinton4mvp.com", origin: "https://quinton4mvp.com",
                 search: "", pathname: "/", replace() {} },
+    navigator: { clipboard: { writeText: async () => {} } },
     console: { log() {}, error() {}, warn() {} },
     document: {
       addEventListener(ev, fn) { if (ev === "DOMContentLoaded") this._boot = fn; },
       querySelector: (sel) => get(sel),
       querySelectorAll: (sel) => (sel === ".tab" ? tabs : []),
-      createElement: () => makeEl("created")
+      createElement: () => makeEl("created"),
+      body: { appendChild() {}, removeChild() {} },
+      execCommand: () => true
     },
     fetch: async (url) => {
       fetched.push(url);
@@ -88,16 +92,18 @@ function harness(apiResponses) {
     + " drawBars, esc, pctText, recText, unitText, Q, gameStarted, state, renderGames,"
     + " togglePick, renderPicks, validateRules, cellBlocked, shortName, briefMatchup, sayWhy,"
     + " minPicks, setMinPicks, floorNote, seasonOfDate, alignWeekToSeason, fetchOdds,"
-    + " buildWeekSlips, slipCardHtml, pickLineHtml,"
+    + " buildWeekSlips, slipCardHtml, pickLineHtml, shareSlipText, shareSlip, MINE, tinyTeam,"
     + " boot: document._boot };";
 
   const fn = new Function(
     "localStorage", "sessionStorage", "location", "console", "document", "fetch", "window",
+    "navigator",
     src + "\n" + exported
   );
 
   const api = fn(win.localStorage, win.sessionStorage, win.location, win.console,
-                 win.document, win.fetch, win);
+                 win.document, win.fetch, win,
+                 new Proxy({}, { get: (_, k) => win.navigator[k] }));
   return { api, get, tabs, fetched, session, win };
 }
 
@@ -902,6 +908,103 @@ function run4() {
       await hh.api.buildWeekSlips("2026-09-09");
       ok(/Could not load picks/.test(hh.get("#weekSlips").innerHTML),
          "it says so instead of going silent", hh.get("#weekSlips").innerHTML.slice(0, 80));
+    }
+
+
+    let hhShare = null;
+    section("the shared slip is short enough for a message bubble");
+    {
+      const rows = [
+        { week:"2025-12-03", market:"spread", kind:"favorite", selection:"Kansas City Chiefs",
+          matchup:"Buffalo Bills @ Kansas City Chiefs", line:-3, odds:-110, status:"win", league:"NFL" },
+        { week:"2025-12-03", market:"spread", kind:"underdog", selection:"Cincinnati Bengals",
+          matchup:"Cincinnati Bengals @ Buffalo Bills", line:5.5, odds:-102, status:"loss", league:"NFL" },
+        { week:"2025-12-03", market:"total", kind:"over", selection:"Over",
+          matchup:"Chicago Bears @ Green Bay Packers", line:44.5, odds:-110, status:"win", league:"NFL" },
+        { week:"2025-12-03", market:"total", kind:"under", selection:"Under",
+          matchup:"Duke Blue Devils @ Virginia Cavaliers", line:52.5, odds:-110, status:"pending", league:"NCAAF" },
+        { week:"2025-12-03", market:"moneyline", kind:"ml", selection:"Miami Dolphins",
+          matchup:"Miami Dolphins @ New York Jets", line:"", odds:-154, status:"win", league:"NFL" }
+      ];
+      const hh = harness({ seasons: SEASONS });
+      await hh.api.loadSeasons();
+      hh.get("#nameInput").value = "Reid";
+      hhShare = hh;
+
+      const text = hh.api.shareSlipText("2025-12-03", rows);
+      const lines = text.split("\n");
+
+      ok(/^Picks Game/.test(lines[0]), "it says what it is", lines[0]);
+      ok(/Reid 3-1/.test(text), "with the name and record", lines[1]);
+      ok(/1 pending/.test(text), "and what is not settled yet", lines[1]);
+      ok(/quinton4mvp\.com/.test(text), "and a way back to the site");
+
+      /* The lesson from the share row that wrapped in iMessage: keep it narrow
+         or the whole thing arrives as ragged nonsense. */
+      const widest = Math.max.apply(null, lines.map((l) => l.length));
+      ok(widest <= 32, "no line is wide enough to wrap in a bubble", widest + " chars");
+
+      ok(/✅ Chiefs -3/.test(text), "a spread names the team and the number",
+         (text.match(/.*Chiefs.*/) || [])[0]);
+      ok(/❌ Bengals \+5\.5/.test(text), "a dog keeps its plus sign",
+         (text.match(/.*Bengals.*/) || [])[0]);
+      /* Over and Under name no game, so the matchup has to carry them. */
+      ok(/Bears\/Packers o44\.5/.test(text), "a total names its game",
+         (text.match(/.*Packers.*/) || [])[0]);
+      ok(/Duke.*u52\.5/.test(text), "and the under side reads as under",
+         (text.match(/.*Duke.*/) || [])[0]);
+      ok(/⏳/.test(text), "an ungraded pick is marked pending, not as a loss");
+      ok(/Dolphins ML -154/.test(text), "a moneyline shows its price",
+         (text.match(/.*Dolphins.*/) || [])[0]);
+    }
+
+    section("a team name is trimmed at a word, never mid-word");
+    {
+      const t = hhShare.api.tinyTeam;
+      ok(t("Kansas City Chiefs") === "Chiefs", "the NFL map still wins", t("Kansas City Chiefs"));
+      ok(t("Duke Blue Devils") === "Duke Blue", "a long college name keeps whole words",
+         t("Duke Blue Devils"));
+      ok(t("Virginia Cavaliers") === "Virginia", "dropping the mascot", t("Virginia Cavaliers"));
+      ok(t("North Carolina Tar Heels") === "North Carolina", "and keeping a two-word school",
+         t("North Carolina Tar Heels"));
+      ok(t("TCU Horned Frogs") === "TCU Horned", "short names are left as they are",
+         t("TCU Horned Frogs"));
+      /* Cutting mid-word gives "Jacksonvi", which helps nobody. */
+      ok(t("Jacksonville State Gamecocks") === "Jacksonville",
+         "never mid-word", t("Jacksonville State Gamecocks"));
+      ok(t("") === "", "and an empty name stays empty");
+    }
+
+    section("sharing copies, and says so when it cannot");
+    {
+      const rows = [{ week:"2025-12-03", market:"moneyline", kind:"ml", selection:"Miami Dolphins",
+        matchup:"Miami Dolphins @ New York Jets", line:"", odds:-154, status:"win", league:"NFL" }];
+
+      const hh = harness({ seasons: SEASONS });
+      await hh.api.loadSeasons();
+      hh.api.MINE.byWeek = { "2025-12-03": rows };
+
+      let copied = null;
+      hh.win.navigator = { clipboard: { writeText: async (t) => { copied = t; } } };
+      await hh.api.shareSlip("2025-12-03");
+      ok(copied && /Dolphins/.test(copied), "the text reaches the clipboard",
+         (copied || "").slice(0, 40));
+      ok(/Copied/.test(hh.get("#shareStatus").textContent), "and it says so",
+         hh.get("#shareStatus").textContent);
+
+      /* Both paths refused. Disabling only the modern one proves nothing - the
+         execCommand fallback picks it up and the copy genuinely succeeds. */
+      hh.win.navigator = { clipboard: { writeText: async () => { throw new Error("denied"); } } };
+      hh.win.document.execCommand = () => false;
+      hh.get("#shareStatus").textContent = "";
+      await hh.api.shareSlip("2025-12-03");
+      ok(/select and copy/.test(hh.get("#shareStatus").textContent),
+         "a refusal offers the text instead", hh.get("#shareStatus").textContent);
+
+      hh.api.MINE.byWeek = {};
+      await hh.api.shareSlip("2025-12-03");
+      ok(/Nothing to share/.test(hh.get("#shareStatus").textContent),
+         "and an empty week says that rather than copying a blank");
     }
 
     section("a stats failure is reported, not silent");

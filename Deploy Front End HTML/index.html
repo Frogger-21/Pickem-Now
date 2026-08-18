@@ -204,6 +204,10 @@
     .pickRow .status{font-family:var(--mono);font-size:9px;letter-spacing:.1em;color:var(--pend)}
     .pickRow.win  .status{color:var(--win)}
     .pickRow.loss .status{color:var(--loss)}
+    #btnShare{width:100%;margin-top:8px;padding:11px;border-radius:11px;
+              background:var(--surface-2);border:1px solid var(--line);
+              color:var(--text);font-weight:600;font-size:13.5px}
+    #btnShare:active{background:var(--surface)}
     .weekRow{display:flex;align-items:center;gap:10px;padding:11px 12px;background:var(--surface);
              border:1px solid var(--line-soft);border-radius:11px;margin-bottom:6px;cursor:pointer}
     .weekRow .rec{margin-left:auto;font-family:var(--mono);font-weight:700}
@@ -1121,7 +1125,116 @@ async function submitPicks(){
   }
 }
 
+/* =================== SHARE SLIP =================== */
+/* A text version for the group chat. Kept narrow on purpose: a line much over
+   thirty characters wraps in an iMessage bubble and the whole thing turns into
+   ragged nonsense, which is exactly what nobody wants pasted into the thread. */
+
+const SHARE_MARK = { win: '✅', loss: '❌', push: '➖', pending: '⏳' };
+
+/* A message bubble has no width to spare, and shortName only rewrites NFL
+   names - "Duke Blue Devils/Virginia Cavaliers" is 35 characters on its own.
+   Keep whole words up to a budget, since a college name is school-then-mascot
+   and the school comes first. Never mid-word: "Jacksonvi" helps nobody. */
+function tinyTeam(name){
+  const mapped = shortName(name);
+  if (mapped.length <= 14) return mapped;
+  const words = mapped.split(/\s+/);
+  let out = words[0];
+  for (let i = 1; i < words.length; i++){
+    if ((out + ' ' + words[i]).length > 14) break;
+    out += ' ' + words[i];
+  }
+  return out;
+}
+
+/** One pick, as short as it can be while still saying what it was. */
+function shareLine(p){
+  const st = String(p.status || 'pending').toLowerCase();
+  const mark = SHARE_MARK[st] || SHARE_MARK.pending;
+  const num = (v) => (v === '' || v === null || v === undefined) ? '' : signed(Number(v));
+
+  let what;
+  if (p.market === 'total'){
+    /* "Under" names no game, so the matchup has to carry it. A slash reads
+       better than " @ " at this width and saves two characters. */
+    const sides = String(p.matchup || '').split(' @ ');
+    const game = sides.length === 2
+      ? tinyTeam(sides[0]) + '/' + tinyTeam(sides[1]) : String(p.matchup || '');
+    what = game + ' ' + (p.kind === 'under' ? 'u' : 'o') + (p.line === '' ? '' : p.line);
+  } else if (p.market === 'moneyline'){
+    what = tinyTeam(p.selection) + ' ML ' + num(p.odds);
+  } else {
+    what = tinyTeam(p.selection) + ' ' + num(p.line);
+  }
+  return mark + ' ' + what.trim();
+}
+
+function shareSlipText(week, rows){
+  const name = (el('#nameInput').value || '').trim()
+            || (el('#emailInput').value || '').trim() || 'Picks';
+  const w = rows.filter(p => p.status === 'win').length;
+  const l = rows.filter(p => p.status === 'loss').length;
+  const pend = rows.filter(p => !p.status || p.status === 'pending').length;
+
+  const head = 'Picks Game · ' + fmtWeek(week).replace(/^Week of /, '');
+  const rec = name + ' ' + w + '-' + l + (pend ? ' · ' + pend + ' pending' : '');
+
+  return [head, rec, ''].concat(rows.map(shareLine))
+    .concat(['', 'quinton4mvp.com']).join('\n');
+}
+
+/** Clipboard, with the fallback older mobile Safari still needs. */
+async function copyText(text){
+  try{
+    if (navigator.clipboard && navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  }catch(_){}
+  try{
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return !!ok;
+  }catch(_){ return false; }
+}
+
+async function shareSlip(week){
+  const rows = (MINE.byWeek || {})[week] || [];
+  const status = el('#shareStatus');
+  if (!rows.length){
+    if (status) status.textContent = 'Nothing to share for this week.';
+    return;
+  }
+  const text = shareSlipText(week, rows);
+  const done = await copyText(text);
+  if (status){
+    /* If the clipboard is refused, show the text so it can still be copied by
+       hand rather than leaving somebody tapping a button that does nothing. */
+    status.textContent = done ? 'Copied. Paste it into the group chat.'
+                              : 'Could not reach the clipboard - select and copy:';
+    if (!done){
+      const pre = document.createElement('textarea');
+      pre.value = text;
+      pre.rows = Math.min(text.split('\n').length + 1, 14);
+      pre.style.cssText = 'width:100%;margin-top:8px;background:var(--surface);'
+        + 'color:var(--text);border:1px solid var(--line);border-radius:10px;padding:8px;'
+        + 'font-family:var(--mono);font-size:12px';
+      status.appendChild(pre);
+      pre.select();
+    }
+  }
+}
+
 /* =================== MY PICKS =================== */
+const MINE = { byWeek: {} };
 async function loadMyPicks(){
   const host = el('#mineBody');
   if (!host) return;
@@ -1137,6 +1250,7 @@ async function loadMyPicks(){
     const byWeek={};
     for(const p of picks) (byWeek[p.week]=byWeek[p.week]||[]).push(p);
     const weeks=Object.keys(byWeek).sort().reverse();
+    MINE.byWeek = byWeek;
 
     let html='';
     weeks.forEach((wk,i)=>{
@@ -1148,7 +1262,9 @@ async function loadMyPicks(){
         html+='<div class="slipHead"><span class="wk">'+esc(wk)+'</span>'
             + '<span class="eyebrow">'+(pend?pend+' pending':'final')+'</span>'
             + '<span class="rec">'+w+'–'+l+'</span></div>'
-            + rows.map(pickRowHtml).join('');
+            + rows.map(pickRowHtml).join('')
+            + '<button id="btnShare" data-week="'+esc(wk)+'">Share slip</button>'
+            + '<div id="shareStatus" class="hint" style="margin-top:8px"></div>';
         if(weeks.length>1) html+='<div class="eyebrow" style="margin:18px 0 8px">Earlier weeks</div>';
       }else{
         html+='<div class="weekRow" data-week="'+esc(wk)+'"><span>'+esc(wk)+'</span>'
@@ -1156,6 +1272,9 @@ async function loadMyPicks(){
       }
     });
     host.innerHTML=html;
+
+    const share=el('#btnShare');
+    if(share) share.addEventListener('click',()=>shareSlip(share.dataset.week));
 
     /* Earlier weeks expand into the same slip rather than a dropdown. */
     els('#mineBody .weekRow').forEach(node=>{

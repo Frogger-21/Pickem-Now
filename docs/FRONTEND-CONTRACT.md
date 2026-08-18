@@ -298,6 +298,9 @@ Game market buttons carry class `chip`, and `chip selected` when chosen.
 
 ### My Picks
 
+`btnShare` copies a plain-text slip for the group chat; `shareStatus` reports
+the result and, if the clipboard is refused, offers the text in a textarea.
+
 `myPicksTable` — a `<table>` with a `<tbody>`. Cells are given
 `data-label="Week"`, `"Sport"`, `"Matchup"`, `"Market"`, `"Selection"`,
 `"Line"`, `"Odds"`, `"Status"` so the mobile card layout can use
