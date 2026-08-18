@@ -765,18 +765,20 @@ function blockText(reason, market, kind){
   return BLOCK_REASON[reason] || '';
 }
 
-function cellHtml(g, market, kind, sel, main, odds, meta){
+/* hideOdds: the moneyline cell's value IS the price, so repeating it
+   underneath prints the same number twice. */
+function cellHtml(g, market, kind, sel, main, odds, meta, hideOdds){
   if (main === null || main === undefined || main === '')
     return '<div class="cell blank" title="Not priced"></div>';
   const selected = isPicked(g.id, market, kind, sel);
   const blocked  = selected ? null : cellBlocked(g, market, kind, odds);
   const cls = 'cell ' + (selected ? 'selected pickable' : (blocked ? 'dead' : 'pickable'));
-  const priced = !(odds === null || odds === undefined || odds === '');
+  const priced = !(odds === null || odds === undefined || odds === '') && !hideOdds;
   const why = blocked ? blockText(blocked, market, kind) : (selected ? 'Tap to remove' : '');
   return '<div class="' + cls + '" title="' + esc(why) + '"'
     + ' data-game="' + esc(g.id) + '" data-market="' + esc(market) + '"'
     + ' data-kind="' + esc(kind) + '" data-sel="' + esc(sel) + '"'
-    + ' data-odds="' + (priced ? esc(odds) : '') + '"'
+    + ' data-odds="' + ((odds === null || odds === undefined || odds === '') ? '' : esc(odds)) + '"'
     + ' data-meta="' + esc(JSON.stringify(meta || {})) + '">'
     + '<span class="main">' + esc(main) + '</span>'
     + '<span class="odds">' + (priced ? esc(signed(Number(odds))) : '') + '</span>'
@@ -806,7 +808,7 @@ function gameHtml(g){
                { total:total, price:totPrice })
     + cellHtml(g, 'moneyline', 'ml', team,
                (mlOdds === null || mlOdds === undefined) ? '' : signed(Number(mlOdds)),
-               mlOdds, { price:mlOdds })
+               mlOdds, { price:mlOdds }, true)
     + '</div>';
 
   return '<div class="game' + (started ? ' started' : '') + '">'
@@ -857,12 +859,29 @@ function renderPicks(){
     const p = state.picks.find(s.test);
     if (!p) return '<div class="slot"><span class="role">' + s.role + '</span></div>';
     const meta = p.meta || {};
-    const sub = p.market === 'total' ? String(meta.total)
-              : p.market === 'spread' ? signed(Number(meta.line))
-              : signed(Number(p.odds));
-    return '<div class="slot filled" data-slot="' + i + '">'
+
+    /* A total's selection is the word "Over" or "Under", which names no game -
+       a slot reading UNDER / Under / 47.5 says nothing about what was picked.
+       Show the matchup instead and put the number on the sub-line. Spreads and
+       moneylines already name a team, so they keep it. */
+    let label, sub;
+    if (p.market === 'total') {
+      const sides = String(p.matchup || '').split(' @ ');
+      label = sides.length === 2 ? shortName(sides[0]) + ' @ ' + shortName(sides[1])
+                                 : String(p.matchup || '');
+      sub = (p.kind === 'under' ? 'U ' : 'O ') + meta.total;
+    } else if (p.market === 'spread') {
+      label = shortName(p.selection);
+      sub = signed(Number(meta.line));
+    } else {
+      label = shortName(p.selection);
+      sub = signed(Number(p.odds));
+    }
+
+    return '<div class="slot filled" data-slot="' + i + '" title="'
+      + esc(p.selection + ' - ' + (p.matchup || '')) + '">'
       + '<span class="role">' + s.role + '</span>'
-      + '<span class="pick" title="' + esc(p.selection) + '">' + esc(shortName(p.selection)) + '</span>'
+      + '<span class="pick">' + esc(label) + '</span>'
       + '<span class="sub">' + esc(sub) + '</span></div>';
   }).join('');
 

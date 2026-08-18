@@ -520,6 +520,42 @@ function run4() {
       ok(/white-space:nowrap/.test(rowCss), "rather than wrapping a word at a time");
     }
 
+    section("a slot names the game, and the moneyline price is printed once");
+    {
+      const g = { id:"sl", league:"NCAAF", kickoff:soon,
+        home_team:"TCU Horned Frogs", away_team:"North Carolina Tar Heels",
+        spread:{ fav:"home", line:-7.5, favPrice:-110, dogPrice:-110 },
+        totals:{ total:47.5, overPrice:-115, underPrice:-105 },
+        moneyline:{ home:-330, away:260 } };
+      h.api.state.games=[g]; h.api.state.gamesAll=[g]; h.api.state.picks=[];
+
+      /* A total's selection is the word "Under", which names no game. A slot
+         reading UNDER / Under / 47.5 tells you nothing about what you picked. */
+      h.api.togglePick(g,"total","under","Under",{ total:47.5, price:-105 },-105);
+      h.api.renderPicks();
+      const slot = h.get("#slotRow").innerHTML;
+      ok(!/>Under</.test(slot), "the slot does not just say Under", slot.slice(0,200));
+      ok(/TCU/.test(slot), "it names the game instead", (slot.match(/class="pick">[^<]*/)||[])[0]);
+      ok(/U 47\.5/.test(slot), "with the side and number on the sub-line",
+         (slot.match(/class="sub">[^<]*/)||[])[0]);
+
+      /* A spread and a moneyline already name a team, so they keep it. */
+      h.api.state.picks=[];
+      h.api.togglePick(g,"spread","underdog","North Carolina Tar Heels",{ line:7.5 },-110);
+      h.api.renderPicks();
+      ok(/North Carolina/.test(h.get("#slotRow").innerHTML), "a spread still names its team",
+         (h.get("#slotRow").innerHTML.match(/class="pick">[^<]*/)||[])[0]);
+
+      // The moneyline cell's value is the price; repeating it underneath
+      // printed the same number twice.
+      h.api.state.picks=[];
+      h.api.renderGames();
+      const mlCell = h.get("#games").innerHTML.split('data-market="moneyline"')[1] || "";
+      const shown = (mlCell.match(/\+260/g) || []).length;
+      ok(shown === 1, "the moneyline price appears once, not twice", shown);
+      ok(/data-odds="260"/.test(mlCell), "and the real price still reaches the pick");
+    }
+
     section("a stats failure is reported, not silent");
     const dead = harness({ seasons: SEASONS });   // no stats endpoint
     await dead.api.loadSeasons();
