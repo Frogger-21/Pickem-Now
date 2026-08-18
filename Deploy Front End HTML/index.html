@@ -297,7 +297,7 @@
       .slot .wide{display:inline}
       .slot .narrow{display:none}
       .gridHead,.gameRow{grid-template-columns:1fr 108px 108px 92px}
-      .qControls{grid-template-columns:repeat(3,1fr)}
+      .qControls{grid-template-columns:repeat(4,1fr)}
       .chartRow{grid-template-columns:minmax(120px,220px) 1fr auto}
       .qBody{display:grid;grid-template-columns:1fr 330px;gap:20px;align-items:start}
       .champStats{max-width:420px;margin-inline:auto}
@@ -425,6 +425,16 @@
         </select></div>
       <div class="qField"><label class="eyebrow" for="qPlayer">Player</label>
         <select id="qPlayer"></select></div>
+      <div class="qField" id="qMinField"><label class="eyebrow" for="qMinPicks">Min picks</label>
+        <select id="qMinPicks">
+          <option value="1">1+ — everything</option>
+          <option value="2">2+</option>
+          <option value="3">3+</option>
+          <option value="4">4+ — default</option>
+          <option value="6">6+</option>
+          <option value="8">8+</option>
+          <option value="10">10+ — only the regulars</option>
+        </select></div>
       <div class="qField"><label class="eyebrow">Season</label>
         <div class="hint" id="qSeasonEcho" style="padding:11px 2px"></div></div>
     </div>
@@ -1166,8 +1176,23 @@ const VIEW_TITLE = {
 /* A team picked once and won reads 1.000, which says nothing. Thirty-eight of
    the hundred-odd teams in a season are picked exactly once, so an unfiltered
    ranking is a list of coin flips. Four decided picks is where the noise stops
-   drowning everything. */
-const TEAM_MIN_PICKS = 4;
+   drowning everything - but where to draw it is a judgement, so it is a control
+   rather than a constant, remembered for the session like the season is. */
+const TEAM_MIN_DEFAULT = 4;
+const MIN_PICKS_KEY = 'pg_minpicks';
+/* Only the team views have rows thin enough for this to matter. Every market
+   has 109 picks and every player 60-plus, so a floor there would be a control
+   that does nothing. */
+const VIEWS_WITH_FLOOR = { teamsW:1, teamsL:1, teamsPct:1 };
+
+function minPicks(){
+  let v;
+  try { v = Number(sessionStorage.getItem(MIN_PICKS_KEY)); } catch(_){}
+  return (isFinite(v) && v > 0) ? v : TEAM_MIN_DEFAULT;
+}
+function setMinPicks(v){
+  try { sessionStorage.setItem(MIN_PICKS_KEY, String(v)); } catch(_){}
+}
 
 /* Horizontal bars. Values can be negative (units), so the scale is drawn
    around zero rather than assuming everything grows rightwards. */
@@ -1228,6 +1253,18 @@ function drawLine(host, points, opts){
     + '</div>';
 }
 
+/* Say what the floor did, including when it did nothing. A filter that is
+   silently on is worse than one that is off. */
+function floorNote(total, kept, floor){
+  if (floor <= 1) return 'Every team is shown, including any picked only once - '
+    + 'a single pick that won reads 1.000 and means nothing.';
+  const cut = total - kept;
+  return cut
+    ? 'Teams picked fewer than ' + floor + ' times are left out - that is '
+      + cut + ' of ' + total + ' here.'
+    : 'No team fell below the ' + floor + '-pick minimum.';
+}
+
 async function loadQueryData(){
   const season=SEASON.current||'all';
   if(Q.data && Q.season===season) return Q.data;
@@ -1266,6 +1303,8 @@ function renderQuery(){
   const node=(data.stats||{})[who];
 
   if(title) title.textContent=VIEW_TITLE[view]||'';
+  const minField=el('#qMinField');
+  if(minField) minField.classList.toggle('hidden', !VIEWS_WITH_FLOOR[view]);
   if(!node){
     chart.innerHTML='<div class="chartEmpty">No graded picks for this selection.</div>';
     summary.textContent=''; note.textContent=''; if(rail) rail.innerHTML=''; return;
@@ -1325,33 +1364,35 @@ function renderQuery(){
     tail='Running total of units. Above the dashed line is a profitable season to that point.';
 
   }else if(view==='teamsPct'){
+    const floor=minPicks();
     const all=(node.teams||[]).filter(t=>(t.w+t.l)>0);
-    const enough=all.filter(t=>(t.w+t.l)>=TEAM_MIN_PICKS);
+    const enough=all.filter(t=>(t.w+t.l)>=floor);
     rows=enough.slice()
       .sort((a,b)=>{
         const pa=a.w/(a.w+a.l), pb=b.w/(b.w+b.l);
-        /* Equal rate, more picks first - 9-2 is a better bet than 4-0. */
+        /* Equal rate, more picks first - 9-0 is better evidence than 4-0. */
         return (pb-pa)||((b.w+b.l)-(a.w+a.l))||a.team.localeCompare(b.team);
       })
       .slice(0,15)
       .map(t=>({ label:t.team, value:t.w/(t.w+t.l),
                  note:recText(t)+'  '+pctText(t)+'  '+unitText(t.units), cls:'win' }));
-    const cut=all.length-enough.length;
     tail='Ranked by win rate, spread and moneyline picks only. '
-       + 'Teams picked fewer than '+TEAM_MIN_PICKS+' times are left out'
-       + (cut?' - that is '+cut+' of '+all.length+' here':'')
-       + ', because one pick that won reads 1.000 and means nothing. '
-       + 'Equal rates are ordered by how many picks back them.';
+       + floorNote(all.length, enough.length, floor)
+       + ' Equal rates are ordered by how many picks back them.';
 
   }else if(view==='teamsW'||view==='teamsL'){
     const wantWins=(view==='teamsW');
-    rows=(node.teams||[]).slice()
+    const floor=minPicks();
+    const all=(node.teams||[]).filter(t=>(wantWins?t.w:t.l)>0);
+    const enough=all.filter(t=>(t.w+t.l)>=floor);
+    rows=enough.slice()
       .sort((a,b)=>wantWins?((b.w-a.w)||(a.l-b.l)):((b.l-a.l)||(a.w-b.w)))
-      .filter(t=>(wantWins?t.w:t.l)>0).slice(0,12)
+      .slice(0,12)
       .map(t=>({ label:t.team, value:wantWins?t.w:t.l,
                  note:recText(t)+'  '+unitText(t.units), cls:wantWins?'win':'loss' }));
-    tail='Spread and moneyline picks only - a total names Over or Under, not a team. Top 12 by '
-       + (wantWins?'wins.':'losses.');
+    tail='Spread and moneyline picks only - a total names Over or Under, not a team. '
+       + floorNote(all.length, enough.length, floor)
+       + ' Top 12 by '+(wantWins?'wins.':'losses.');
   }
 
   if(!drew) drawBars(chart, rows);
@@ -1475,6 +1516,8 @@ document.addEventListener('DOMContentLoaded', ()=>{
   });
   el('#qPlayer').addEventListener('change',renderQuery);
   el('#qView').addEventListener('change',renderQuery);
+  el('#qMinPicks').value = String(minPicks());
+  el('#qMinPicks').addEventListener('change',e=>{ setMinPicks(e.target.value); renderQuery(); });
 
   el('#btnPrevWeek').addEventListener('click',()=>{
     state.weekStart=addDays(state.weekStart,-7); updateWeekLabel(); filterByWeek(); });

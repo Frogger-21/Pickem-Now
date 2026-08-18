@@ -299,7 +299,8 @@ Game market buttons carry class `chip`, and `chip selected` when chosen.
 
 ### Queries
 
-`qPlayer` (select), `qView` (select), `qSummary`, `qChart`, `qNote`
+`qPlayer` (select), `qView` (select), `qMinPicks` (select, inside `qMinField`),
+`qSummary`, `qTitle`, `qChart`, `qNote`, `qRail`
 
 `qView` option values, which the render code switches on:
 `markets`, `units`, `leagues`, `weeks`, `cum`, `teamsW`, `teamsL`, `teamsPct`, `players`

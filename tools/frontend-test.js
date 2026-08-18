@@ -87,6 +87,7 @@ function harness(apiResponses) {
   const exported = "return { SEASON, apiUrl, loadSeasons, buildQueries, renderQuery,"
     + " drawBars, esc, pctText, recText, unitText, Q, gameStarted, state, renderGames,"
     + " togglePick, renderPicks, validateRules, cellBlocked, shortName, briefMatchup, sayWhy,"
+    + " minPicks, setMinPicks, floorNote,"
     + " boot: document._boot };";
 
   const fn = new Function(
@@ -633,6 +634,62 @@ function run4() {
       ok(/3 of 6/.test(note), "along with how many teams it removed", note);
     }
 
+    section("the sample floor is a control, not a constant");
+    {
+      const t = (team,w,l) => ({ team:team, w:w, l:l, p:0, n:w+l,
+                                 pct:(w+l)?w/(w+l):0, units:0 });
+      const data = JSON.parse(JSON.stringify(STATS));
+      data.stats.__all__.teams = [
+        t("Once", 1, 0), t("Twice", 2, 0), t("Thrice", 3, 0),
+        t("Four", 4, 0), t("Eight", 8, 0)
+      ];
+      const hh = harness({ seasons: SEASONS, stats: data });
+      await hh.api.loadSeasons();
+      await hh.api.buildQueries();
+      hh.get("#qView").value = "teamsPct";
+
+      ok(hh.api.minPicks() === 4, "it defaults to four", hh.api.minPicks());
+      hh.api.renderQuery();
+      ok(!/Thrice/.test(hh.get("#qChart").innerHTML), "so a 3-0 team is out by default");
+
+      hh.api.setMinPicks(1);
+      hh.api.renderQuery();
+      const wide = hh.get("#qChart").innerHTML;
+      ok(/Once/.test(wide) && /Thrice/.test(wide), "at 1+ everything appears");
+      ok(/Every team is shown/.test(hh.get("#qNote").textContent),
+         "and the note says the filter is off, rather than going quiet",
+         hh.get("#qNote").textContent);
+
+      hh.api.setMinPicks(8);
+      hh.api.renderQuery();
+      const tight = hh.get("#qChart").innerHTML;
+      ok(/Eight/.test(tight) && !/Four/.test(tight), "at 8+ only the regulars survive");
+      ok(/4 of 5 here/.test(hh.get("#qNote").textContent),
+         "with the count it removed", hh.get("#qNote").textContent);
+
+      /* A floor that removes nothing must still say so - a silent filter is
+         worse than a visible one. */
+      ok(/No team fell below/.test(hh.api.floorNote(5, 5, 4)),
+         "and says when it removed nothing", hh.api.floorNote(5, 5, 4));
+
+      // It applies to the ranked-by-wins views too, not just the rate one.
+      hh.api.setMinPicks(8);
+      hh.get("#qView").value = "teamsW";
+      hh.api.renderQuery();
+      ok(!/Four/.test(hh.get("#qChart").innerHTML), "Best teams honours it as well");
+
+      // And is hidden where every row already has a hundred picks.
+      hh.get("#qView").value = "markets";
+      hh.api.renderQuery();
+      ok(hh.get("#qMinField").classList.contains("hidden"),
+         "the control hides on views where it would do nothing");
+      hh.get("#qView").value = "teamsPct";
+      hh.api.renderQuery();
+      ok(!hh.get("#qMinField").classList.contains("hidden"), "and returns on the team views");
+
+      hh.api.setMinPicks(4);
+    }
+
     section("equal win rates are broken by sample size");
     {
       const t = (team,w,l) => ({ team:team, w:w, l:l, p:0, n:w+l, pct:1, units:0 });
@@ -699,7 +756,9 @@ function run4() {
 
     section("team names are escaped, not injected");
     const nasty = JSON.parse(JSON.stringify(STATS));
-    nasty.stats.Ann.teams = [{ team: '<img src=x onerror=alert(1)>', w: 1, l: 0, p: 0, n: 1, pct: 1, units: 1 }];
+    /* Enough picks to clear the minimum-sample floor, or it never gets drawn
+       and the escaping is not actually exercised. */
+    nasty.stats.Ann.teams = [{ team: '<img src=x onerror=alert(1)>', w: 6, l: 1, p: 0, n: 7, pct: 0.857, units: 1 }];
     const h2 = harness({ seasons: SEASONS, stats: nasty });
     await h2.api.loadSeasons();
     await h2.api.buildQueries();
