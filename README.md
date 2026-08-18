@@ -213,6 +213,14 @@ the feed — preseason counts — you can put a throwaway pick on one and watch
 `autoGrade()` grade it for real, network and all. `checkOddsApi()` shows what's
 currently there.
 
+## Rebuilding the frontend
+
+`docs/FRONTEND-CONTRACT.md` is the handoff document: every endpoint with real
+response shapes, every element id the JavaScript binds to, the behaviour that
+has to survive, and the handful of things that look cosmetic but are not - the
+`__APPS_SCRIPT_URL__` placeholder, the `"Away @ Home"` matchup format, and why
+`apiConfigured()` tests a value shape rather than comparing against a constant.
+
 ## Seasons
 
 One selector, top left, governs every tab. Which season a pick belongs to is
