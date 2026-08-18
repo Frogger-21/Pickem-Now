@@ -1444,21 +1444,74 @@ function getWeeks_(season) {
   });
 }
 
-/** One week in detail, for the weekly panel on the board tab. */
-function getWeek_(week) {
-  const { weeks } = tallies_();
-  const perUser = weeks[String(week)] || {};
-  const w = weekWinners_(perUser);
-  const rows = Object.keys(perUser).map(u => ({
-    user: u,
-    wins: perUser[u].wins,
-    losses: perUser[u].losses,
-    pushes: perUser[u].pushes,
-    pending: perUser[u].pending,
-    winner: w.winners.indexOf(u) >= 0
-  })).sort((a, b) => (b.wins - a.wins) || (a.losses - b.losses) || a.user.localeCompare(b.user));
+const PICKS_PER_WEEK = 5;
 
-  return { week: String(week), decided: w.decided, winners: w.winners, rows };
+/** Everyone who has played in a given season. */
+function seasonRoster_(season) {
+  const seen = {};
+  for (const p of readPicks_()) {
+    if (p.week === SELFTEST_WEEK) continue;
+    const u = String(p.user || '').trim();
+    if (u && seasonOfPick_(p) === season) seen[u] = true;
+  }
+  return Object.keys(seen).sort();
+}
+
+/**
+ * One week in detail, for the weekly panel on the board tab.
+ *
+ * Includes people who have not picked at all. Reading it off the picks alone
+ * would list only those who turned up, which answers "how is everyone doing"
+ * but not "who still owes me picks" - and the second question is the one asked
+ * on a Friday.
+ */
+function getWeek_(week) {
+  const wk = String(week);
+  const { weeks } = tallies_();
+  const perUser = weeks[wk] || {};
+  const w = weekWinners_(perUser);
+
+  // Who is expected. Before a new season has any picks the roster would be
+  // empty, so fall back to the most recent season that has one - otherwise
+  // week one of a season can never show anybody as missing.
+  const ymd = weekKey_(wk);
+  let roster = /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? seasonRoster_(seasonOf_(ymd)) : [];
+  if (!roster.length) {
+    for (const s of getSeasons_()) {
+      const r = seasonRoster_(s.season);
+      if (r.length) { roster = r; break; }
+    }
+  }
+
+  const names = {};
+  for (const u of Object.keys(perUser)) names[u] = true;
+  for (const u of roster) names[u] = true;
+
+  const rows = Object.keys(names).map(function (u) {
+    const r = perUser[u] || { wins: 0, losses: 0, pushes: 0, pending: 0, total: 0 };
+    return {
+      user: u,
+      wins: r.wins, losses: r.losses, pushes: r.pushes, pending: r.pending,
+      picks: r.total,
+      complete: r.total >= PICKS_PER_WEEK,
+      winner: w.winners.indexOf(u) >= 0
+    };
+  }).sort(function (a, b) {
+    // Anyone who actually picked ranks above anyone who did not, so a 0-5 week
+    // is not filed alongside a week somebody skipped.
+    return ((b.picks > 0) - (a.picks > 0))
+        || (b.wins - a.wins) || (a.losses - b.losses)
+        || a.user.localeCompare(b.user);
+  });
+
+  return {
+    week: wk,
+    decided: w.decided,
+    winners: w.winners,
+    rows: rows,
+    expected: PICKS_PER_WEEK,
+    missing: rows.filter(function (r) { return !r.complete; }).map(function (r) { return r.user; })
+  };
 }
 
 // Admin-only grading
@@ -2575,7 +2628,23 @@ function picksForSeason_(season) {
   return all.filter(function (p) { return seasonOfPick_(p) === want; });
 }
 
-/** Seasons that actually have picks, newest first. */
+/** The season today falls in, whether or not anybody has picked in it. */
+function currentSeason_() {
+  const d = new Date();
+  const ymd = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2)
+            + '-' + ('0' + d.getDate()).slice(-2);
+  return seasonOf_(ymd);
+}
+
+/**
+ * Seasons, newest first.
+ *
+ * The current one is always included even with nothing in it yet. Deriving the
+ * list purely from picks means a new season does not exist until somebody has
+ * picked in it - and they cannot pick in it until they can select it. The
+ * season a pick lands in still comes from its week date; this only makes the
+ * empty one selectable.
+ */
 function getSeasons_() {
   const seen = {};
   for (const p of readPicks_()) {
@@ -2587,12 +2656,16 @@ function getSeasons_() {
     seen[s].weeks[p.week] = true;
     if (String(p.user || '').trim()) seen[s].players[p.user] = true;
   }
+  const now = currentSeason_();
+  if (now && !seen[now]) seen[now] = { picks: 0, weeks: {}, players: {} };
+
   return Object.keys(seen).sort().reverse().map(function (s) {
     return {
       season:  s,
       picks:   seen[s].picks,
       weeks:   Object.keys(seen[s].weeks).length,
-      players: Object.keys(seen[s].players).length
+      players: Object.keys(seen[s].players).length,
+      current: s === now
     };
   });
 }

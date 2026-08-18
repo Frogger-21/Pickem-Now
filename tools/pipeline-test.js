@@ -81,7 +81,7 @@ function harness(sheets, scoresByLeague) {
   const names = Object.keys(env);
   const api = new Function(
     ...names,
-    SRC + "return { runAutoGrade_, submitPicks_, getBoard_, getWeek_, getWeeks_, tallies_, getSeasons_, getStats_, getMyPicks_, unitPnl_, marketBucket_," +
+    SRC + "return { runAutoGrade_, submitPicks_, getBoard_, getWeek_, getWeeks_, tallies_, seasonRoster_, currentSeason_, getSeasons_, getStats_, getMyPicks_, unitPnl_, marketBucket_," +
           " runSelfTest, selfTestPicks_, SELFTEST_WEEK };"
   )(...names.map((n) => env[n]));
 
@@ -695,6 +695,96 @@ section("kickoff lock: signatures compare the right things");
   ok(sig(base) !== sig({ ...base, gameId: "g2" }), "a different game does");
   ok(sig({ ...base, meta: '{"line":-3}' }) === sig(base),
      "meta as a JSON string reads the same as an object");
+}
+
+
+section("the week view says who has not picked yet");
+{
+  /* Reading a week off the picks alone lists only the people who turned up,
+     which answers "how is everyone doing" but not "who still owes me picks" -
+     and on a Friday that is the question. */
+  const mk = (id, user, week, status) =>
+    [id, week, user.toLowerCase() + "@x.com", user, "NFL", "g" + id, "A @ B",
+     "moneyline", "ml", "KC", "", "{}", status, ""];
+
+  const rows = [PICK_HEADERS];
+  // Three players established the season in an earlier week.
+  for (const u of ["Ann", "Bob", "Cid"])
+    for (let i = 0; i < 5; i++) rows.push(mk(u + "old" + i, u, "2025-09-03", "win"));
+  // This week only Ann is complete; Bob got halfway; Cid never showed.
+  for (let i = 0; i < 5; i++) rows.push(mk("ann" + i, "Ann", "2025-09-10", "win"));
+  for (let i = 0; i < 2; i++) rows.push(mk("bob" + i, "Bob", "2025-09-10", "pending"));
+
+  const { api } = harness({ Picks: rows, Results: [] }, SCORES);
+  const w = api.getWeek_("2025-09-10");
+  const by = {};
+  for (const r of w.rows) by[r.user] = r;
+
+  ok(w.rows.length === 3, "everyone in the season is listed, not just who played",
+     w.rows.map(r => r.user).join());
+  ok(by.Ann.complete === true && by.Ann.picks === 5, "a full slip is complete");
+  ok(by.Bob.complete === false && by.Bob.picks === 2, "a half slip is not", by.Bob.picks);
+  ok(by.Cid.picks === 0, "somebody who never picked shows zero, not absent");
+  ok(w.expected === 5, "the target is stated rather than assumed by the page");
+  ok(w.missing.join() === "Bob,Cid", "and both are named", w.missing.join());
+
+  // Anyone who picked outranks anyone who did not, so an 0-5 week is not
+  // filed next to a week somebody skipped.
+  ok(w.rows[w.rows.length - 1].user === "Cid", "the no-show sorts last",
+     w.rows.map(r => r.user).join());
+}
+
+section("a brand new season still knows who is expected");
+{
+  const mk = (id, user, week) =>
+    [id, week, user.toLowerCase() + "@x.com", user, "NFL", "g" + id, "A @ B",
+     "moneyline", "ml", "KC", "", "{}", "win", ""];
+  // A whole season played, then a week in the NEXT season that nobody has
+  // touched. The roster has to come from somewhere or week one can never say
+  // who is missing.
+  const rows = [PICK_HEADERS];
+  for (const u of ["Ann", "Bob"])
+    for (let i = 0; i < 5; i++) rows.push(mk(u + i, u, "2025-09-03"));
+
+  const { api } = harness({ Picks: rows, Results: [] }, SCORES);
+  const w = api.getWeek_("2026-09-09");
+  ok(w.rows.length === 2, "last season's players carry over as the expected roster",
+     w.rows.map(r => r.user).join());
+  ok(w.missing.join() === "Ann,Bob", "and all of them are owing", w.missing.join());
+  ok(w.rows.every(r => r.picks === 0), "with nothing recorded for any of them");
+}
+
+
+section("the current season is selectable before anyone has picked in it");
+{
+  /* A season derived purely from picks does not exist until somebody picks in
+     it - and nobody can pick in it until they can select it. */
+  const mk = (id, user, week) =>
+    [id, week, user.toLowerCase() + "@x.com", user, "NFL", "g" + id, "A @ B",
+     "moneyline", "ml", "KC", "", "{}", "win", ""];
+  const rows = [PICK_HEADERS];
+  for (let i = 0; i < 5; i++) rows.push(mk("a" + i, "Ann", "2025-09-03"));
+
+  const { api } = harness({ Picks: rows, Results: [] }, SCORES);
+  const seasons = api.getSeasons_();
+  const now = api.currentSeason_();
+
+  ok(seasons.some(s => s.season === now), "today's season is in the list", now);
+  ok(seasons[0].season === now, "and is newest, so it becomes the default",
+     seasons.map(s => s.season).join());
+  const empty = seasons.find(s => s.season === now);
+  ok(empty.picks === 0 && empty.weeks === 0,
+     "reported honestly as empty rather than invented", JSON.stringify(empty));
+  ok(empty.current === true, "and flagged as the current one");
+
+  const old = seasons.find(s => s.season === "2025-26");
+  ok(old && old.picks === 5, "the season with picks still reports them", old && old.picks);
+  ok(old.current === false, "and is not the current one");
+
+  /* Filtering to the empty season must return nothing, not everything - a
+     silent fall-through would show last season's board under this year's name. */
+  ok(api.getBoard_(now).length === 0, "its board is empty", api.getBoard_(now).length);
+  ok(api.getBoard_("2025-26").length === 1, "while the played season still has one");
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

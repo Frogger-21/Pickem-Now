@@ -229,6 +229,11 @@
     .brate i{display:block;height:100%;background:var(--accent-dim);border-radius:2px}
     tr.leader .brate i{background:var(--accent)}
     .bpct{font-weight:700;font-size:14.5px}
+    /* Owing picks: dimmed rather than coloured red. It is a nudge, not a
+       failure, and half the table can be in this state on a Wednesday. */
+    table.board tr.owing td{opacity:.5}
+    .owe{display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;
+         color:var(--accent);text-transform:uppercase;margin-top:3px}
 
     /* ------------------------------------------------------------- queries */
     .qControls{display:grid;grid-template-columns:1fr;gap:8px;margin-bottom:12px}
@@ -514,6 +519,17 @@ function inRangeLocal(iso,start,end){
   return t>=a && t<=b;
 }
 
+/* Which season a date belongs to. August to July, so a January bowl stays in
+   the season that started the previous August - the same rule the server uses,
+   because the two disagreeing would put a pick in a year the page did not
+   show. */
+function seasonOfDate(d){
+  const x = new Date(d);
+  const y = x.getFullYear(), m = x.getMonth() + 1;
+  const start = m >= 8 ? y : y - 1;
+  return start + '-' + String(start + 1).slice(2);
+}
+
 /* Kickoff in the past. An absent or unparseable kickoff is NOT started - the
    forgiving side, and the same call the server makes. */
 function gameStarted(game){
@@ -603,7 +619,8 @@ async function loadSeasons(){
   if (!saved || !SEASON.list.some(s => s.season === saved)) SEASON.current = SEASON.newest;
 
   sel.innerHTML = SEASON.list.map(s =>
-      '<option value="' + esc(s.season) + '">' + esc(s.season) + '</option>').join('')
+      '<option value="' + esc(s.season) + '">' + esc(s.season)
+      + (s.picks ? '' : ' — no picks yet') + '</option>').join('')
     + '<option value="all">All seasons</option>';
   sel.value = SEASON.current;
   markSeasonStale();
@@ -619,8 +636,40 @@ function markSeasonStale(){
   if (echo) echo.textContent = s || 'all';
 }
 
+/* Put the Make Picks week inside the selected season. Without this the
+   selector governs what you read but not what you write, and a pick made while
+   "2026-27" is showing can land in a different year entirely. */
+async function alignWeekToSeason(){
+  const want = SEASON.current;
+  if (!want || want === 'all') return false;
+  if (seasonOfDate(state.weekStart) === want) return false;
+
+  const today = startOfWedWeek(new Date());
+  if (seasonOfDate(today) === want) {
+    state.weekStart = today;                       // the live season: this week
+  } else {
+    /* A past season: land on its most recent week that has picks, so the tab
+       shows something real rather than an arbitrary date. */
+    let landed = null;
+    try {
+      const r = await fetch(apiUrl('weeks'));
+      const j = await r.json();
+      const wk = ((j && j.weeks) || [])[0];
+      if (wk && /^\d{4}-\d{2}-\d{2}$/.test(wk.week)) {
+        const [y, m, d] = wk.week.split('-').map(Number);
+        landed = new Date(y, m - 1, d);
+      }
+    } catch (_) {}
+    state.weekStart = landed || new Date(Number(want.slice(0, 4)), 8, 1);
+  }
+  updateWeekLabel();
+  filterByWeek();
+  return true;
+}
+
 async function refreshSeasonViews(){
   markSeasonStale();
+  await alignWeekToSeason();
   const active = el('.tab.active');
   const tab = active ? active.dataset.tab : 'picks';
   if (tab === 'board')   await buildBoard();
@@ -990,7 +1039,14 @@ function validateRules(){
                : 'Pick ' + (5 - state.picks.length) + ' more');
 
   const ws = el('#weekStatus');
-  if (ws && missing){
+  const wantSeason = SEASON.current;
+  if (ws && wantSeason && wantSeason !== 'all'
+      && seasonOfDate(state.weekStart) !== wantSeason){
+    ws.textContent = 'This week is in ' + seasonOfDate(state.weekStart)
+      + ', but the season selector says ' + wantSeason
+      + '. Picks are filed by their week, so they would land in '
+      + seasonOfDate(state.weekStart) + '.';
+  } else if (ws && missing){
     ws.textContent = 'This week has no ' + missing + ' games, and a slip needs two. '
       + 'Nothing can be submitted for it - try a later week.';
   }
@@ -1140,24 +1196,41 @@ async function buildBoard(){
 
 async function buildBoardWeek(){
   const tbody=el('#boardTable tbody'), foot=el('#boardFoot');
-  const wr=await fetch(apiUrl('weeks')); const wj=await wr.json();
-  const weeks=(wj && wj.weeks)||[];
-  if(!weeks.length){
-    tbody.innerHTML='<tr><td colspan="5" class="hint">No weeks yet.</td></tr>';
-    foot.textContent=''; return;
-  }
-  const wk=weeks[0].week;
+
+  /* The current calendar week, not the newest week that happens to have picks
+     in it. Before anybody has submitted, the latter does not exist - and that
+     is exactly when "who still owes me picks" is the question being asked. */
+  const wk = isoDate(startOfWedWeek(new Date()));
   const r=await fetch(apiUrl('week',{ week:wk })); const j=await r.json();
   const rows=(j && j.rows)||[];
+  if(!rows.length){
+    tbody.innerHTML='<tr><td colspan="5" class="hint">Nobody has played a week yet.</td></tr>';
+    foot.textContent=''; return;
+  }
+  const expected=(j && j.expected)||5;
+
   tbody.innerHTML=rows.map((row,i)=>{
     const dec=row.wins+row.losses;
     const pct=dec?(row.wins/dec).toFixed(3).replace(/^0/,''):'-';
-    return '<tr'+(row.winner?' class="leader"':'')+'><td>'+(i+1)+'</td>'
-      + '<td><span class="bname">'+esc(row.user)+'</span></td>'
-      + '<td>'+row.wins+'</td><td>'+row.losses+'</td><td class="bpct">'+pct+'</td></tr>';
+    const short = row.picks === 0 ? 'no picks yet'
+                : !row.complete   ? row.picks + ' of ' + expected + ' picks'
+                : '';
+    return '<tr'+(row.winner?' class="leader"':'')
+      + (row.complete?'':' class="owing"')+'>'
+      + '<td>'+(row.picks?(i+1):'—')+'</td>'
+      + '<td><span class="bname">'+esc(row.user)+'</span>'
+      + (short?'<span class="owe">'+esc(short)+'</span>':'')+'</td>'
+      + '<td>'+(row.picks?row.wins:'—')+'</td>'
+      + '<td>'+(row.picks?row.losses:'—')+'</td>'
+      + '<td class="bpct">'+(row.picks?pct:'—')+'</td></tr>';
   }).join('');
-  foot.textContent = wk + (j.decided ? ' · won by ' + ((j.winners||[]).join(', ')||'nobody')
-                                     : ' · still undecided');
+
+  const missing=(j && j.missing)||[];
+  foot.textContent = wk + ' · '
+    + (missing.length
+        ? missing.length + ' still to pick: ' + missing.join(', ')
+        : 'everybody is in')
+    + (j.decided ? ' · won by ' + ((j.winners||[]).join(', ')||'nobody') : '');
 }
 
 /* =================== QUERIES =================== */

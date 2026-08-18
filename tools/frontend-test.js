@@ -87,7 +87,7 @@ function harness(apiResponses) {
   const exported = "return { SEASON, apiUrl, loadSeasons, buildQueries, renderQuery,"
     + " drawBars, esc, pctText, recText, unitText, Q, gameStarted, state, renderGames,"
     + " togglePick, renderPicks, validateRules, cellBlocked, shortName, briefMatchup, sayWhy,"
-    + " minPicks, setMinPicks, floorNote,"
+    + " minPicks, setMinPicks, floorNote, seasonOfDate, alignWeekToSeason,"
     + " boot: document._boot };";
 
   const fn = new Function(
@@ -706,6 +706,45 @@ function run4() {
       ok(html.indexOf("Zulu Many") < html.indexOf("Alpha Few"),
          "both are 1.000, so the one with more picks behind it leads - not the "
          + "one that sorts first alphabetically");
+    }
+
+    section("the season a date belongs to matches the server's rule");
+    {
+      const f = h.api.seasonOfDate;
+      ok(f(new Date(2026, 8, 9))  === "2026-27", "September opens a season", f(new Date(2026,8,9)));
+      ok(f(new Date(2026, 7, 26)) === "2026-27", "and so does late August", f(new Date(2026,7,26)));
+      ok(f(new Date(2026, 6, 31)) === "2025-26", "July still belongs to the old one", f(new Date(2026,6,31)));
+      ok(f(new Date(2027, 0, 5))  === "2026-27", "a January bowl stays where the season started",
+         f(new Date(2027,0,5)));
+    }
+
+    section("the selector governs what gets written, not just what is read");
+    {
+      /* The gap this closes: a season only existed once it had picks, so the
+         new one could not be selected - and even selected, it governed the
+         board and the queries while a pick still landed wherever the Make
+         Picks week happened to be. */
+      const hh = harness({ seasons: SEASONS, stats: STATS, weeks: { ok: true, weeks: [] },
+                           board: { ok: true, rows: [] } });
+      await hh.api.loadSeasons();
+
+      hh.api.SEASON.current = "2026-27";
+      hh.api.state.weekStart = new Date(2025, 10, 12);   // a 2025-26 week
+      await hh.api.alignWeekToSeason();
+      ok(hh.api.seasonOfDate(hh.api.state.weekStart) === "2026-27",
+         "choosing a season moves the picking week into it",
+         hh.api.seasonOfDate(hh.api.state.weekStart));
+
+      const before = hh.api.state.weekStart.getTime();
+      await hh.api.alignWeekToSeason();
+      ok(hh.api.state.weekStart.getTime() === before,
+         "and leaves it alone once it already matches");
+
+      hh.api.SEASON.current = "all";
+      hh.api.state.weekStart = new Date(2025, 10, 12);
+      await hh.api.alignWeekToSeason();
+      ok(hh.api.state.weekStart.getTime() === new Date(2025, 10, 12).getTime(),
+         "all-seasons moves nothing, because it means nothing in particular");
     }
 
     section("a week that cannot be played says so");
