@@ -213,6 +213,50 @@ the feed — preseason counts — you can put a throwaway pick on one and watch
 `autoGrade()` grade it for real, network and all. `checkOddsApi()` shows what's
 currently there.
 
+## Seasons
+
+One selector, top left, governs every tab. Which season a pick belongs to is
+**derived from its week date** rather than stored - August to July, so a January
+bowl stays in the season that started the previous August. That is one less
+column to keep in step, and it cannot disagree with the week it came from.
+
+The choice lives in `sessionStorage`, not `localStorage`, deliberately: it
+should survive moving between tabs and reloading, but a fresh visit should open
+on the newest season rather than on whatever somebody was reading about last
+month. A saved season that no longer exists falls back to the newest rather
+than filtering everything down to nothing.
+
+The selector is highlighted whenever it is *not* on the newest season, so
+nobody spends ten minutes wondering where this week's games went.
+
+## Queries
+
+A tab of charts driven by two dropdowns - who, and what to show:
+
+| View | Answers |
+|---|---|
+| Win rate by market | moneyline, favourite, underdog, over, under |
+| Units won by market | the same split, in money rather than percentage |
+| Record by week | wins and losses side by side |
+| Cumulative wins | running total of wins minus losses |
+| Most successful teams | which teams paid off when picked |
+| Teams that cost the most | and which did not |
+| Everyone side by side | the league on one axis |
+
+Favourite versus underdog comes from the **sign of the line**, not from the
+`kind` field. The line is what was actually laid or taken; `kind` is a label
+somebody chose in a form, and the two can disagree.
+
+Aggregation happens in Apps Script rather than the browser, so the arithmetic
+is testable outside it and a new chart never means reimplementing a win rate
+slightly differently. `unitPnl_()` deliberately mirrors `unit_pnl()` in
+`db/schema.sql` - if those two drift, the site and your SQL will tell you
+different things about the same season.
+
+The charts are plain `div`s. The whole app is one file with no build step and
+no CDN, and a charting library would be the only thing on the page capable of
+failing to load.
+
 ## Storage
 
 | Sheet | Contents |
@@ -368,7 +412,8 @@ node tools/grading-test.js    # 48 assertions: spreads, totals, moneylines, edge
 node tools/pipeline-test.js   # 60 assertions: full runs against a fake Sheet, plus layering
 node tools/build-test.js      # 11 assertions: the real Netlify build
 node tools/backtest-test.js   # 42 assertions: the audit and the backtest
-node tools/postgres-test.js   # 105 assertions: the whole stack on a fake PostgREST
+node tools/postgres-test.js   # 118 assertions: the whole stack on a fake PostgREST
+node tools/frontend-test.js   # 55 assertions: the page's own JS on a stub DOM
 ```
 
 `pipeline-test.js` builds a fake spreadsheet and a fake Odds API, then checks

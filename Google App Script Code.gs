@@ -657,7 +657,7 @@ function pgReadUsers_() {
 
 // ===== HTTP HANDLERS =========================================================
 // GET: odds (league=nfl|ncaaf[,nocache=1]), mine (email), board, isAdmin (email)
-const GET_FNS = ['odds', 'mine', 'board', 'weeks', 'week', 'isAdmin'];
+const GET_FNS = ['odds', 'mine', 'board', 'weeks', 'week', 'seasons', 'stats', 'isAdmin'];
 
 // Bump when pasting a new copy into the editor. Only a human can keep this
 // honest, which is why it is not the thing to trust - see capabilities_().
@@ -682,7 +682,9 @@ function capabilities_() {
     livetest:  typeof testAutoGradeLive  === 'function',
     audit:     typeof auditGrades        === 'function',
     backtest:  typeof backtestWeek       === 'function',
-    weeksort:  typeof weekKey_           === 'function'
+    weeksort:  typeof weekKey_           === 'function',
+    seasons:   typeof getSeasons_       === 'function',
+    stats:     typeof getStats_         === 'function'
   };
   return Object.keys(has).filter(function (k) { return has[k]; });
 }
@@ -706,10 +708,12 @@ function doGet(e) {
       }));
     }
     if (p.fn === 'odds')    return asJson(ok(getOdds_(String(p.league || ''), p.weekStart, { noCache: String(p.nocache) === '1' })));
-    if (p.fn === 'mine')    return asJson(ok({ picks: getMyPicks_(String(p.email || '')) }));
-    if (p.fn === 'board')   return asJson(ok({ rows: getBoard_() }));
-    if (p.fn === 'weeks')   return asJson(ok({ weeks: getWeeks_() }));
+    if (p.fn === 'mine')    return asJson(ok({ picks: getMyPicks_(String(p.email || ''), p.season) }));
+    if (p.fn === 'board')   return asJson(ok({ rows: getBoard_(p.season) }));
+    if (p.fn === 'weeks')   return asJson(ok({ weeks: getWeeks_(p.season) }));
     if (p.fn === 'week')    return asJson(ok(getWeek_(String(p.week || ''))));
+    if (p.fn === 'seasons') return asJson(ok({ seasons: getSeasons_() }));
+    if (p.fn === 'stats')   return asJson(ok(getStats_(p.season)));
     if (p.fn === 'isAdmin') return asJson(ok({ admin: isAdminEmail_(String(p.email || '')) }));
     return asJson(err('Unknown fn "' + p.fn + '". Valid: ' + GET_FNS.join(', ')));
   } catch (error) {
@@ -753,8 +757,8 @@ function doPost(e) {
       return asJson(ok(autoGrade()));
     }
     if (fn === 'mine')  return asJson(ok({ picks: getMyPicks_(params.email || email) }));
-    if (fn === 'board') return asJson(ok({ rows: getBoard_() }));
-    if (fn === 'weeks') return asJson(ok({ weeks: getWeeks_() }));
+    if (fn === 'board') return asJson(ok({ rows: getBoard_(params.season) }));
+    if (fn === 'weeks') return asJson(ok({ weeks: getWeeks_(params.season) }));
     if (fn === 'week')  return asJson(ok(getWeek_(String(body.week ?? params.week ?? ''))));
     if (fn === 'odds')  return asJson(ok(getOdds_(params.league || '', null, { noCache: String(params.nocache) === '1' })));
     return asJson(err('Unknown fn'));
@@ -1268,12 +1272,12 @@ function clearExistingPicks_(email, week) {
 }
 
 // Read picks for an email (used by "My Picks" UI)
-function getMyPicks_(email) {
+function getMyPicks_(email, season) {
   if (!email) throw new Error('email required');
   const needle = String(email).trim().toLowerCase();
   const picks = [];
 
-  for (const p of readPicks_()) {
+  for (const p of picksForSeason_(season)) {
     if (p.email.trim().toLowerCase() !== needle) continue;
     const meta = parseMeta_(p.meta);
 
@@ -1298,7 +1302,7 @@ function getMyPicks_(email) {
 // One pass over the sheet builds week -> user -> record. Everything else
 // (weekly winners, the season table, a single week's detail) reads off that.
 
-function tallies_() { return talliesFrom_(readPicks_()); }
+function tallies_(season) { return talliesFrom_(picksForSeason_(season)); }
 
 /** Split out from tallies_ so the same arithmetic can be run over either
     backend's rows when comparing the two. */
@@ -1351,8 +1355,8 @@ function weekWinners_(perUser) {
 }
 
 /** Season table: weeks won is the headline, record behind it. */
-function getBoard_() {
-  const { weeks, users } = tallies_();
+function getBoard_(season) {
+  const { weeks, users } = tallies_(season);
 
   const won = {};
   for (const wk of Object.keys(weeks)) {
@@ -1422,8 +1426,8 @@ function weekKey_(v) {
 }
 
 /** Every week that has picks, newest first. */
-function getWeeks_() {
-  const { weeks } = tallies_();
+function getWeeks_(season) {
+  const { weeks } = tallies_(season);
   return Object.keys(weeks).filter(Boolean)
     .sort(function (a, b) {
       const ka = weekKey_(a), kb = weekKey_(b);
@@ -2546,4 +2550,181 @@ function deleteWeek(week, confirm) {
   } finally {
     lock.releaseLock();
   }
+}
+
+// ===== SEASONS ===============================================================
+// Every week label is a date, so which season a pick belongs to is derived
+// rather than stored. One less column to keep in step, and it cannot disagree
+// with the week it came from.
+
+function seasonOfPick_(p) {
+  const ymd = weekKey_(p.week);
+  return /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? seasonOf_(ymd) : '';
+}
+
+/** Picks for one season. Blank or 'all' means every season. */
+function picksForSeason_(season) {
+  const all = readPicks_().filter(function (p) { return p.week !== SELFTEST_WEEK; });
+  const want = String(season || '').trim();
+  if (!want || want.toLowerCase() === 'all') return all;
+  return all.filter(function (p) { return seasonOfPick_(p) === want; });
+}
+
+/** Seasons that actually have picks, newest first. */
+function getSeasons_() {
+  const seen = {};
+  for (const p of readPicks_()) {
+    if (p.week === SELFTEST_WEEK) continue;
+    const s = seasonOfPick_(p);
+    if (!s) continue;
+    if (!seen[s]) seen[s] = { picks: 0, weeks: {}, players: {} };
+    seen[s].picks++;
+    seen[s].weeks[p.week] = true;
+    if (String(p.user || '').trim()) seen[s].players[p.user] = true;
+  }
+  return Object.keys(seen).sort().reverse().map(function (s) {
+    return {
+      season:  s,
+      picks:   seen[s].picks,
+      weeks:   Object.keys(seen[s].weeks).length,
+      players: Object.keys(seen[s].players).length
+    };
+  });
+}
+
+// ===== STATS =================================================================
+// Aggregated here rather than in the browser so the arithmetic is testable
+// outside Apps Script, and so adding a chart never means reimplementing a win
+// rate slightly differently.
+
+/** Profit on one unit staked, from American odds. Matches unit_pnl() in
+    db/schema.sql - if these two ever disagree, the SQL and the site will tell
+    you different things about the same season. */
+function unitPnl_(status, odds) {
+  const o = num_(odds);
+  const price = (isFinite(o) && o !== 0) ? o : -110;   // unpriced picks are -110
+  if (status === 'win')  return price > 0 ? price / 100 : 100 / Math.abs(price);
+  if (status === 'loss') return -1;
+  return 0;                                            // push, or ungraded
+}
+
+/**
+ * Which bucket a pick belongs in.
+ *
+ * Favourite versus underdog comes from the sign of the line, not from `kind`.
+ * The line is what was actually laid or taken; kind is a label somebody chose
+ * in a form, and the two can disagree.
+ */
+function marketBucket_(p) {
+  const m = String(p.market || '').toLowerCase();
+  const k = String(p.kind || '').toLowerCase();
+  if (m === 'moneyline') return 'moneyline';
+  if (m === 'total')     return k === 'under' ? 'under' : 'over';
+  if (m === 'spread') {
+    const meta = parseMeta_(p.meta) || {};
+    const line = num_(meta.line);
+    if (isFinite(line)) return line < 0 ? 'spread_fav' : (line > 0 ? 'spread_dog' : 'spread_pk');
+    return k === 'underdog' ? 'spread_dog' : 'spread_fav';
+  }
+  return 'other';
+}
+
+const STAT_BUCKETS = ['moneyline', 'spread_fav', 'spread_dog', 'over', 'under', 'spread_pk'];
+const STAT_ALL = '__all__';
+
+function blankRec_() { return { w: 0, l: 0, p: 0, n: 0, units: 0 }; }
+
+function addRec_(r, status, odds) {
+  if (status === 'win') r.w++;
+  else if (status === 'loss') r.l++;
+  else if (status === 'push') r.p++;
+  else return;
+  r.n++;
+  r.units += unitPnl_(status, odds);
+}
+
+function finishRec_(r) {
+  const decided = r.w + r.l;
+  return {
+    w: r.w, l: r.l, p: r.p, n: r.n,
+    // Pushes do not count against a win rate; they were never a decision.
+    pct:   decided ? Math.round((r.w / decided) * 1000) / 1000 : 0,
+    units: Math.round(r.units * 100) / 100
+  };
+}
+
+/**
+ * Everything the Queries tab draws, for one season.
+ * stats.__all__ is the league as a whole; the rest are keyed by player.
+ */
+function getStats_(season) {
+  const picks = picksForSeason_(season);
+  const acc = {};
+
+  function node() {
+    const n = { overall: blankRec_(), markets: {}, weeks: {}, teams: {} };
+    for (const b of STAT_BUCKETS) n.markets[b] = blankRec_();
+    return n;
+  }
+
+  for (const p of picks) {
+    const status = p.status;
+    if (status !== 'win' && status !== 'loss' && status !== 'push') continue;
+    const user = String(p.user || '').trim();
+    const market = String(p.market || '').toLowerCase();
+    const bucket = marketBucket_(p);
+
+    for (const key of [STAT_ALL, user]) {
+      if (!key) continue;
+      if (!acc[key]) acc[key] = node();
+      const n = acc[key];
+
+      addRec_(n.overall, status, p.odds);
+      if (n.markets[bucket]) addRec_(n.markets[bucket], status, p.odds);
+
+      if (p.week) {
+        if (!n.weeks[p.week]) n.weeks[p.week] = blankRec_();
+        addRec_(n.weeks[p.week], status, p.odds);
+      }
+
+      // Only spreads and moneylines name a team; a total's selection is the
+      // word Over or Under, which is not a team anybody picked.
+      if (market === 'spread' || market === 'moneyline') {
+        const t = String(p.selection || '').trim();
+        if (t) {
+          if (!n.teams[t]) n.teams[t] = blankRec_();
+          addRec_(n.teams[t], status, p.odds);
+        }
+      }
+    }
+  }
+
+  const stats = {};
+  for (const key of Object.keys(acc)) {
+    const n = acc[key];
+    const markets = {};
+    for (const b of Object.keys(n.markets)) markets[b] = finishRec_(n.markets[b]);
+
+    const weeks = Object.keys(n.weeks).sort().map(function (w) {
+      const r = finishRec_(n.weeks[w]);
+      r.week = w;
+      return r;
+    });
+
+    const teams = Object.keys(n.teams).map(function (t) {
+      const r = finishRec_(n.teams[t]);
+      r.team = t;
+      return r;
+    }).sort(function (a, b) {
+      return (b.w - a.w) || (a.l - b.l) || a.team.localeCompare(b.team);
+    });
+
+    stats[key] = { overall: finishRec_(n.overall), markets: markets, weeks: weeks, teams: teams };
+  }
+
+  return {
+    season:  String(season || 'all'),
+    players: Object.keys(stats).filter(function (k) { return k !== STAT_ALL; }).sort(),
+    stats:   stats
+  };
 }

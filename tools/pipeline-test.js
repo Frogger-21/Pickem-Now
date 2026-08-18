@@ -81,7 +81,7 @@ function harness(sheets, scoresByLeague) {
   const names = Object.keys(env);
   const api = new Function(
     ...names,
-    SRC + "return { runAutoGrade_, submitPicks_, getBoard_, getWeek_, getWeeks_, tallies_," +
+    SRC + "return { runAutoGrade_, submitPicks_, getBoard_, getWeek_, getWeeks_, tallies_, getSeasons_, getStats_, getMyPicks_, unitPnl_, marketBucket_," +
           " runSelfTest, selfTestPicks_, SELFTEST_WEEK };"
   )(...names.map((n) => env[n]));
 
@@ -392,6 +392,123 @@ section("nothing outside the STORAGE section touches Sheets");
   // _key is opaque: callers may pass it back but must never do arithmetic on it.
   const outside = lines.slice(0, start).concat(lines.slice(end)).join("\n");
   ok(!/_key\s*[-+*/]|[-+*/]\s*_key/.test(outside), "no caller does arithmetic on _key");
+}
+
+
+// ------------------------------------------------------------ seasons + stats
+section("seasons are derived from week dates, newest first");
+{
+  const mk = (id, user, week, market, kind, sel, meta, status, odds) =>
+    [id, week, user.toLowerCase() + "@x.com", user, "NFL", "g" + id, "A @ B",
+     market, kind, sel, odds === undefined ? "" : odds, JSON.stringify(meta), status, ""];
+
+  const picks = [PICK_HEADERS,
+    mk("a1", "Ann", "2025-09-03", "moneyline", "ml", "KC", {}, "win"),
+    mk("a2", "Ann", "2025-12-10", "moneyline", "ml", "KC", {}, "loss"),
+    mk("a3", "Ann", "2026-01-05", "moneyline", "ml", "KC", {}, "win"),   // bowl, same season
+    mk("a4", "Ann", "2026-09-02", "moneyline", "ml", "KC", {}, "win"),   // next season
+    mk("a5", "Bob", "2026-09-09", "moneyline", "ml", "KC", {}, "loss")
+  ];
+  const { api } = harness({ Picks: picks, Results: [] }, SCORES);
+
+  const seasons = api.getSeasons_();
+  ok(seasons.length === 2, "two seasons found", seasons.map((s) => s.season).join());
+  ok(seasons[0].season === "2026-27", "newest first", seasons[0].season);
+  ok(seasons[1].season === "2025-26", "then the older one", seasons[1].season);
+  ok(seasons[1].picks === 3, "a January bowl counts in the season that started in August",
+     seasons[1].picks);
+  ok(seasons[0].players === 2, "players counted per season", seasons[0].players);
+}
+
+section("everything can be scoped to one season");
+{
+  const mk = (id, user, week, status) =>
+    [id, week, user.toLowerCase() + "@x.com", user, "NFL", "g" + id, "A @ B",
+     "moneyline", "ml", "KC", "", "{}", status, ""];
+  const picks = [PICK_HEADERS,
+    mk("o1", "Ann", "2025-09-03", "win"), mk("o2", "Ann", "2025-09-10", "win"),
+    mk("n1", "Ann", "2026-09-02", "loss"), mk("n2", "Bob", "2026-09-02", "win")
+  ];
+  const { api } = harness({ Picks: picks, Results: [] }, SCORES);
+
+  const old = api.getBoard_("2025-26");
+  ok(old.length === 1 && old[0].wins === 2, "the board is filtered", JSON.stringify(old.map((r) => [r.user, r.wins])));
+  const now = api.getBoard_("2026-27");
+  ok(now.length === 2, "a different season, different board", now.length);
+  ok(api.getBoard_().length === 2, "no season means everything", api.getBoard_().length);
+  ok(api.getWeeks_("2025-26").length === 2, "weeks too", api.getWeeks_("2025-26").length);
+  ok(api.getMyPicks_("ann@x.com", "2026-27").length === 1, "and my picks",
+     api.getMyPicks_("ann@x.com", "2026-27").length);
+}
+
+section("stats bucket by the line's sign, not the label on the form");
+{
+  const mk = (id, user, market, kind, sel, meta, status, odds) =>
+    [id, "2025-09-03", user.toLowerCase() + "@x.com", user, "NFL", "g" + id, "A @ B",
+     market, kind, sel, odds === undefined ? "" : odds, JSON.stringify(meta), status, ""];
+
+  const picks = [PICK_HEADERS,
+    mk("s1", "Ann", "spread", "favorite", "KC",  { line: -6.5 }, "win"),
+    mk("s2", "Ann", "spread", "underdog", "BUF", { line:  6.5 }, "loss"),
+    // kind says favourite but the line is a dog: the line is what was taken.
+    mk("s3", "Ann", "spread", "favorite", "BUF", { line:  3   }, "win"),
+    mk("t1", "Ann", "total",  "over",  "Over",  { total: 45.5 }, "win"),
+    mk("t2", "Ann", "total",  "under", "Under", { total: 45.5 }, "loss"),
+    mk("m1", "Ann", "moneyline", "ml", "KC", {}, "win", 150),
+    mk("m2", "Bob", "moneyline", "ml", "KC", {}, "loss", -200)
+  ];
+  const { api } = harness({ Picks: picks, Results: [] }, SCORES);
+  const s = api.getStats_();
+
+  ok(s.players.join() === "Ann,Bob", "players listed", s.players.join());
+  const ann = s.stats["Ann"];
+  ok(ann.markets.spread_dog.n === 2, "a mislabelled favourite counts as a dog",
+     JSON.stringify([ann.markets.spread_fav.n, ann.markets.spread_dog.n]));
+  ok(ann.markets.spread_fav.n === 1, "and the real favourite stays one");
+  ok(ann.markets.over.w === 1 && ann.markets.under.l === 1, "totals split over and under");
+  ok(ann.markets.moneyline.n === 1, "moneyline counted");
+
+  // +150 winner returns 1.5 units; the pushless loss is -1.
+  ok(ann.markets.moneyline.units === 1.5, "a plus-money winner pays its price",
+     ann.markets.moneyline.units);
+  ok(s.stats["Bob"].markets.moneyline.units === -1, "a loser is -1 whatever the price",
+     s.stats["Bob"].markets.moneyline.units);
+
+  const all = s.stats["__all__"];
+  ok(all.overall.n === 7, "the league total covers everyone", all.overall.n);
+}
+
+section("stats: pushes never move a win rate");
+{
+  const mk = (id, status) => [id, "2025-09-03", "a@x.com", "Ann", "NFL", "g" + id, "A @ B",
+    "moneyline", "ml", "KC", "", "{}", status, ""];
+  const { api } = harness({ Picks: [PICK_HEADERS,
+    mk("p1", "win"), mk("p2", "loss"), mk("p3", "push"), mk("p4", "push")
+  ], Results: [] }, SCORES);
+  const o = api.getStats_().stats["Ann"].overall;
+  ok(o.pct === 0.5, "two pushes leave 1-1 at .500", o.pct);
+  ok(o.p === 2 && o.n === 4, "but they are still counted", o.p + "/" + o.n);
+  // 1 win at -110 (+0.909) and 1 loss (-1) net -0.09; the two pushes add zero.
+  ok(o.units === -0.09, "and add nothing to units either", o.units);
+}
+
+section("stats: teams come from spreads and moneylines only");
+{
+  const mk = (id, market, kind, sel, status) =>
+    [id, "2025-09-03", "a@x.com", "Ann", "NFL", "g" + id, "A @ B",
+     market, kind, sel, "", "{}", status, ""];
+  const { api } = harness({ Picks: [PICK_HEADERS,
+    mk("t1", "moneyline", "ml", "Kansas City Chiefs", "win"),
+    mk("t2", "spread", "favorite", "Kansas City Chiefs", "win"),
+    mk("t3", "spread", "favorite", "Buffalo Bills", "loss"),
+    mk("t4", "total", "over", "Over", "win")
+  ], Results: [] }, SCORES);
+  const teams = api.getStats_().stats["Ann"].teams;
+  const names = teams.map((t) => t.team);
+  ok(names.indexOf("Over") < 0, "Over is not a team", names.join());
+  ok(names[0] === "Kansas City Chiefs", "most wins first", names.join());
+  ok(teams[0].w === 2, "counted across both markets", teams[0].w);
+  ok(names.indexOf("Buffalo Bills") === 1, "and the loser is there too", names.join());
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

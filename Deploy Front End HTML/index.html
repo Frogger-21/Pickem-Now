@@ -58,6 +58,30 @@
       .wrap{ padding:12px; }
     }
 
+    /* Season selector - top left, above the brand, because it governs every
+       tab rather than belonging to any one of them. */
+    .seasonBar{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+    .seasonBar label{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+    .seasonBar select{padding:4px 8px;font-size:12px;border-radius:8px}
+    .seasonBar.stale select{border-color:var(--accent);box-shadow:0 0 0 2px rgba(110,168,254,.25)}
+
+    /* Charts. Bars are divs rather than a charting library: one file, no CDN,
+       nothing to break at load time, and it reads fine when text-only. */
+    .chartRows{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+    .chartRow{display:grid;grid-template-columns:minmax(120px,220px) 1fr auto;gap:10px;align-items:center}
+    .chartRow .lbl{font-size:13px;color:#cfe1ff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .chartRow .val{font-size:12px;color:#a8b3e1;font-variant-numeric:tabular-nums;text-align:right;min-width:104px}
+    .track{position:relative;height:20px;background:#0f1734;border:1px solid #22306a;border-radius:6px;overflow:hidden}
+    .bar{position:absolute;top:0;bottom:0;border-radius:5px}
+    .bar.pos{background:linear-gradient(90deg,#2f6df6,#6ea8fe)}
+    .bar.neg{background:linear-gradient(90deg,#c0392b,#ef6d5e)}
+    .bar.win{background:linear-gradient(90deg,#1f9d55,#8fff9f)}
+    .bar.loss{background:linear-gradient(90deg,#8e2f2f,#ef6d5e)}
+    /* Where a scale crosses zero, mark it so a negative bar is unmistakable. */
+    .zero{position:absolute;top:0;bottom:0;width:1px;background:#5566a8}
+    .chartEmpty{padding:18px;text-align:center;color:var(--muted);
+                border:1px dashed #2a3a7a;border-radius:12px}
+
     /* Hall of Fame tiles */
     .hofGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
     .hofCard{background:#0f1734;border:1px solid #22306a;border-radius:14px;padding:14px;display:flex;flex-direction:column;align-items:center;text-align:center}
@@ -70,6 +94,10 @@
 <div class="wrap">
   <header>
     <div>
+      <div class="seasonBar">
+        <label for="seasonPicker">Season</label>
+        <select id="seasonPicker"><option>loading...</option></select>
+      </div>
       <div class="brand">Picks Game</div>
       <div class="sub">Pick 2 NFL, 2 CFB • 1 Over, 1 Under, 1 Favorite, 1 Underdog • + 1 Moneyline (&gt; -200)</div>
     </div>
@@ -86,6 +114,7 @@
       <div class="tab active" data-tab="picks">Make Picks</div>
       <div class="tab" data-tab="mine">My Picks</div>
       <div class="tab" data-tab="board">Scoreboard</div>
+      <div class="tab" data-tab="queries">Queries</div>
       <div class="tab" data-tab="hof">Hall of Fame</div>
     </div>
     <div class="hr"></div>
@@ -167,6 +196,26 @@
         </tr></thead>
         <tbody></tbody>
       </table>
+    </section>
+
+    <section id="view-queries" class="view hidden">
+      <div class="controls" style="margin-bottom:12px">
+        <label for="qPlayer">Who</label>
+        <select id="qPlayer"></select>
+        <label for="qView">Show</label>
+        <select id="qView">
+          <option value="markets">Win rate by market</option>
+          <option value="units">Units won by market</option>
+          <option value="weeks">Record by week</option>
+          <option value="cum">Cumulative wins over the season</option>
+          <option value="teamsW">Most successful teams picked</option>
+          <option value="teamsL">Teams that cost the most</option>
+          <option value="players">Everyone, side by side</option>
+        </select>
+      </div>
+      <div id="qSummary" class="hint"></div>
+      <div id="qChart"></div>
+      <div id="qNote" class="hint" style="margin-top:10px"></div>
     </section>
 
     <section id="view-hof" class="view hidden">
@@ -259,6 +308,279 @@ const state = {
 };
 
 function updateWeekLabel(){ const end=addDays(state.weekStart,6); el('#weekLabel').textContent=`Week: ${fmtShort(state.weekStart)} – ${fmtShort(end)}`; }
+
+/* =================== QUERIES =================== */
+/* Charts are plain divs. The whole app is one file with no build step and no
+   CDN, and a charting library would be the only thing on the page able to fail
+   at load time. Bars made of elements are also legible to a screen reader,
+   which a canvas is not. */
+
+const Q = { data: null, season: null };
+
+const MARKET_LABEL = {
+  moneyline:  'Moneyline',
+  spread_fav: 'Spread - favourite',
+  spread_dog: 'Spread - underdog',
+  spread_pk:  'Spread - pick em',
+  over:       'Total - over',
+  under:      'Total - under'
+};
+
+function esc(v) {
+  return String(v == null ? '' : v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+const pctText  = (r) => (r.w + r.l) ? (r.w / (r.w + r.l)).toFixed(3).replace(/^0/, '') : '-';
+const recText  = (r) => r.w + '-' + r.l + (r.p ? '-' + r.p : '');
+const unitText = (u) => (u > 0 ? '+' : '') + Number(u).toFixed(2) + 'u';
+
+/* One horizontal bar chart. Values can be negative (units), so the scale is
+   drawn around zero rather than assuming everything grows rightwards. */
+function drawBars(host, rows) {
+  if (!rows.length) {
+    host.innerHTML = '<div class="chartEmpty">Nothing to show for this selection.</div>';
+    return;
+  }
+  const vals = rows.map(r => r.value);
+  const lo = Math.min(0, Math.min.apply(null, vals));
+  const hi = Math.max(0, Math.max.apply(null, vals));
+  const span = (hi - lo) || 1;
+  const zeroPct = ((0 - lo) / span) * 100;
+
+  host.innerHTML = '<div class="chartRows">' + rows.map(r => {
+    const v = Number(r.value) || 0;
+    const from  = ((Math.min(v, 0) - lo) / span) * 100;
+    const width = (Math.abs(v) / span) * 100;
+    const cls = r.cls || (v < 0 ? 'neg' : 'pos');
+    return '<div class="chartRow">'
+      + '<div class="lbl" title="' + esc(r.label) + '">' + esc(r.label) + '</div>'
+      + '<div class="track">'
+      +   (lo < 0 ? '<div class="zero" style="left:' + zeroPct.toFixed(2) + '%"></div>' : '')
+      +   '<div class="bar ' + cls + '" style="left:' + from.toFixed(2)
+      +   '%;width:' + Math.max(width, 0.6).toFixed(2) + '%"></div>'
+      + '</div>'
+      + '<div class="val">' + esc(r.note || '') + '</div>'
+      + '</div>';
+  }).join('') + '</div>';
+}
+
+async function loadQueryData() {
+  const season = SEASON.current || 'all';
+  if (Q.data && Q.season === season) return Q.data;
+  const r = await fetch(apiUrl('stats'));
+  const j = await r.json();
+  if (!j || j.ok === false) throw new Error((j && j.error) || 'stats unavailable');
+  Q.data = j;
+  Q.season = season;
+  return j;
+}
+
+async function buildQueries() {
+  const chart = el('#qChart'), summary = el('#qSummary'), note = el('#qNote');
+  chart.innerHTML = '<div class="chartEmpty">Loading...</div>';
+  summary.textContent = '';
+  note.textContent = '';
+
+  let data;
+  try {
+    data = await loadQueryData();
+  } catch (e) {
+    chart.innerHTML = '<div class="chartEmpty">Could not load stats: '
+      + esc(e.message || e) + '</div>';
+    return;
+  }
+
+  /* Keep whoever was selected if they exist in this season too - changing
+     season should not silently throw you back to Everyone. */
+  const sel = el('#qPlayer');
+  const previous = sel.value;
+  const players = data.players || [];
+  sel.innerHTML = '<option value="__all__">Everyone combined</option>'
+    + players.map(p => '<option value="' + esc(p) + '">' + esc(p) + '</option>').join('');
+  sel.value = (previous === '__all__' || players.indexOf(previous) >= 0) ? previous : '__all__';
+
+  renderQuery();
+}
+
+function renderQuery() {
+  const chart = el('#qChart'), summary = el('#qSummary'), note = el('#qNote');
+  const data = Q.data;
+  if (!data) return;
+
+  const who = el('#qPlayer').value || '__all__';
+  const view = el('#qView').value;
+  const node = (data.stats || {})[who];
+
+  if (!node) {
+    chart.innerHTML = '<div class="chartEmpty">No graded picks for this selection.</div>';
+    summary.textContent = '';
+    note.textContent = '';
+    return;
+  }
+
+  const label = who === '__all__' ? 'Everyone' : who;
+  const o = node.overall;
+  summary.innerHTML = '<strong>' + esc(label) + '</strong> &middot; '
+    + recText(o) + ' &middot; ' + pctText(o) + ' &middot; ' + unitText(o.units)
+    + ' &middot; season ' + esc(data.season);
+
+  const marketRows = (valueOf, noteOf, cls) =>
+    Object.keys(MARKET_LABEL)
+      .filter(k => node.markets[k] && node.markets[k].n > 0)
+      .map(k => {
+        const r = node.markets[k];
+        return { label: MARKET_LABEL[k], value: valueOf(r), note: noteOf(r), cls: cls };
+      });
+
+  let rows = [], tail = '';
+
+  if (view === 'markets') {
+    rows = marketRows(
+      r => (r.w + r.l) ? r.w / (r.w + r.l) : 0,
+      r => recText(r) + '  ' + pctText(r),
+      'win');
+    tail = 'Win rate ignores pushes, which were never a decision. Break-even '
+         + 'against a -110 line is .524 - anything below that is losing money '
+         + 'however good it looks.';
+
+  } else if (view === 'units') {
+    rows = marketRows(r => r.units, r => unitText(r.units) + '  ' + recText(r), null);
+    tail = 'Profit on one unit staked per pick, at the real price. Unpriced '
+         + 'picks are treated as -110.';
+
+  } else if (view === 'weeks') {
+    node.weeks.forEach(w => {
+      rows.push({ label: w.week + '  won',  value: w.w, note: String(w.w), cls: 'win' });
+      rows.push({ label: w.week + '  lost', value: w.l, note: String(w.l), cls: 'loss' });
+    });
+    tail = 'Wins and losses for each week, oldest first.';
+
+  } else if (view === 'cum') {
+    let run = 0;
+    rows = node.weeks.map(w => {
+      run += w.w - w.l;
+      return { label: w.week, value: run, note: (run > 0 ? '+' : '') + run };
+    });
+    tail = 'Running total of wins minus losses. Above zero is a winning season '
+         + 'to that point.';
+
+  } else if (view === 'teamsW' || view === 'teamsL') {
+    const wantWins = view === 'teamsW';
+    rows = node.teams.slice()
+      .sort((a, b) => wantWins ? (b.w - a.w) || (a.l - b.l) : (b.l - a.l) || (a.w - b.w))
+      .filter(t => (wantWins ? t.w : t.l) > 0)
+      .slice(0, 15)
+      .map(t => ({
+        label: t.team,
+        value: wantWins ? t.w : t.l,
+        note: recText(t) + '  ' + unitText(t.units),
+        cls: wantWins ? 'win' : 'loss'
+      }));
+    tail = 'Spread and moneyline picks only - a total names Over or Under, not '
+         + 'a team. Top 15 by ' + (wantWins ? 'wins.' : 'losses.');
+
+  } else if (view === 'players') {
+    rows = (data.players || []).map(p => {
+      const r = ((data.stats[p] || {}).overall) || { w: 0, l: 0, p: 0, units: 0 };
+      return {
+        label: p,
+        value: (r.w + r.l) ? r.w / (r.w + r.l) : 0,
+        note: recText(r) + '  ' + pctText(r),
+        cls: 'win'
+      };
+    }).sort((a, b) => b.value - a.value);
+    tail = 'Everyone in this season by win rate. The Who selector does not '
+         + 'apply to this view.';
+  }
+
+  drawBars(chart, rows);
+  note.textContent = tail;
+}
+
+/* =================== SEASON =================== */
+/* One selector governs every tab. It lives in sessionStorage rather than
+   localStorage on purpose: the choice should survive moving between tabs and
+   reloading, but a fresh visit should always open on the newest season rather
+   than whatever somebody was reading about last month. sessionStorage is
+   exactly that - per tab, cleared when the tab closes. */
+const SEASON_KEY = 'pg_season';
+const SEASON = {
+  list: [],
+  get current() {
+    try { return sessionStorage.getItem(SEASON_KEY) || ''; } catch (_) { return ''; }
+  },
+  set current(v) {
+    try { v ? sessionStorage.setItem(SEASON_KEY, v) : sessionStorage.removeItem(SEASON_KEY); }
+    catch (_) {}
+  },
+  get newest() { return this.list.length ? this.list[0].season : ''; }
+};
+
+/* Build an API URL with the chosen season attached. Every read goes through
+   here, so a new endpoint is season-aware without anyone remembering to make
+   it so. */
+function apiUrl(fn, params) {
+  let u = CONFIG.API + '?fn=' + encodeURIComponent(fn);
+  const p = params || {};
+  for (const k of Object.keys(p)) {
+    if (p[k] === undefined || p[k] === null || p[k] === '') continue;
+    u += '&' + k + '=' + encodeURIComponent(p[k]);
+  }
+  const s = SEASON.current;
+  if (s && s !== 'all') u += '&season=' + encodeURIComponent(s);
+  return u;
+}
+
+async function loadSeasons(){
+  const sel = el('#seasonPicker');
+  try{
+    const r = await fetch(CONFIG.API + '?fn=seasons');
+    const j = await r.json();
+    SEASON.list = (j && j.seasons) || [];
+  }catch(_){ SEASON.list = []; }
+
+  if (!SEASON.list.length){
+    sel.innerHTML = '<option value="">No data yet</option>';
+    return;
+  }
+
+  /* A season saved earlier may no longer exist - the data can be reworked
+     between visits. Fall back to the newest rather than silently filtering
+     everything down to nothing. */
+  const saved = SEASON.current;
+  const known = SEASON.list.some(s => s.season === saved);
+  if (!saved || !known) SEASON.current = SEASON.newest;
+
+  sel.innerHTML = SEASON.list.map(s =>
+    '<option value="' + s.season + '">' + s.season +
+    ' (' + s.weeks + ' wk, ' + s.players + ' players)</option>').join('')
+    + '<option value="all">All seasons</option>';
+  sel.value = SEASON.current;
+  markSeasonStale();
+}
+
+/* Highlight the selector when it is not on the newest season, so nobody spends
+   ten minutes wondering why this week's games are missing from the board. */
+function markSeasonStale(){
+  const bar = el('.seasonBar');
+  if (!bar) return;
+  const s = SEASON.current;
+  bar.classList.toggle('stale', !!s && s !== SEASON.newest);
+}
+
+/* Everything that reads season-scoped data, re-run together. */
+async function refreshSeasonViews(){
+  markSeasonStale();
+  const active = el('.tab.active');
+  const tab = active ? active.dataset.tab : 'picks';
+  if (tab === 'board')   await buildBoard();
+  if (tab === 'queries') await buildQueries();
+  if (tab === 'mine')    await loadMyPicks();
+  /* The other tabs read their data when opened, so they pick the new season up
+     on the way in. */
+}
 
 /* =================== ROBUST FETCH ODDS =================== */
 async function fetchOdds(){
@@ -497,7 +819,7 @@ async function submitPicks(){
 async function loadMyPicks(){
   const email=(el('#emailInput').value||'').trim(); 
   if(!email) return;
-  const r=await fetch(CONFIG.API+'?fn=mine&email='+encodeURIComponent(email));
+  const r=await fetch(apiUrl('mine', { email: email }));
   const j=await r.json();
   const tbody=el('#myPicksTable tbody'); tbody.innerHTML='';
   (j.picks||[]).forEach(p=>{
@@ -526,7 +848,7 @@ async function loadMyPicks(){
 
 /* Season table: weeks won leads, record and win pct behind it. */
 async function buildBoard(){
-  const r=await fetch(CONFIG.API+'?fn=board'); const j=await r.json();
+  const r=await fetch(apiUrl('board')); const j=await r.json();
   const tbody=el('#boardTable tbody'); tbody.innerHTML='';
   const rows=j.rows||[];
   if(!rows.length){
@@ -557,7 +879,7 @@ async function buildBoard(){
 /* Week dropdown, newest first, flagged with who took each one. */
 async function buildWeekPicker(){
   const sel=el('#weekPicker'); if(!sel) return;
-  const r=await fetch(CONFIG.API+'?fn=weeks'); const j=await r.json();
+  const r=await fetch(apiUrl('weeks')); const j=await r.json();
   const weeks=j.weeks||[];
   const keep=sel.value;
   sel.innerHTML=weeks.map(w=>{
@@ -573,7 +895,7 @@ async function buildWeekPicker(){
 
 async function buildWeek(week){
   if(!week) return;
-  const r=await fetch(CONFIG.API+'?fn=week&week='+encodeURIComponent(week));
+  const r=await fetch(apiUrl('week', { week: week }));
   const j=await r.json();
   const tbody=el('#weekTable tbody'); tbody.innerHTML='';
   (j.rows||[]).forEach(row=>{
@@ -622,9 +944,20 @@ document.addEventListener('DOMContentLoaded', ()=>{
   els('.tab').forEach(t=> t.addEventListener('click', ()=> {
     const tab = t.dataset.tab;
     show(tab);
-    if (tab === 'mine')  loadMyPicks();
-    if (tab === 'board') buildBoard();
+    if (tab === 'mine')    loadMyPicks();
+    if (tab === 'board')   buildBoard();
+    if (tab === 'queries') buildQueries();
   }));
+
+  /* The season governs every tab, so changing it invalidates the cached stats
+     and re-runs whatever is on screen. */
+  el('#seasonPicker').addEventListener('change', e=>{
+    SEASON.current = e.target.value;
+    Q.data = null; Q.season = null;
+    refreshSeasonViews();
+  });
+  el('#qPlayer').addEventListener('change', renderQuery);
+  el('#qView').addEventListener('change', renderQuery);
 
   el('#btnPrevWeek').addEventListener('click', ()=>{ state.weekStart = addDays(state.weekStart,-7); filterByWeek(); });
   el('#btnNextWeek').addEventListener('click', ()=>{ state.weekStart = addDays(state.weekStart, 7); filterByWeek(); });
@@ -650,7 +983,9 @@ document.addEventListener('DOMContentLoaded', ()=>{
   }
 
   fetchOdds();
-  buildBoard();
+  /* Seasons first: the board should open already scoped rather than
+     flashing every season and then correcting itself. */
+  loadSeasons().then(buildBoard);
   if((el('#emailInput').value||'').trim()) loadMyPicks();
 });
 </script>
