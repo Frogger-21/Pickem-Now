@@ -2662,7 +2662,7 @@ function getStats_(season) {
   const acc = {};
 
   function node() {
-    const n = { overall: blankRec_(), markets: {}, weeks: {}, teams: {} };
+    const n = { overall: blankRec_(), markets: {}, leagues: {}, weeks: {}, teams: {} };
     for (const b of STAT_BUCKETS) n.markets[b] = blankRec_();
     return n;
   }
@@ -2681,6 +2681,14 @@ function getStats_(season) {
 
       addRec_(n.overall, status, p.odds);
       if (n.markets[bucket]) addRec_(n.markets[bucket], status, p.odds);
+
+      // NFL against college is a question the data can answer and the
+      // market split cannot: they are different sports to handicap.
+      const lg = String(p.league || '').toUpperCase();
+      if (lg) {
+        if (!n.leagues[lg]) n.leagues[lg] = blankRec_();
+        addRec_(n.leagues[lg], status, p.odds);
+      }
 
       if (p.week) {
         if (!n.weeks[p.week]) n.weeks[p.week] = blankRec_();
@@ -2705,6 +2713,9 @@ function getStats_(season) {
     const markets = {};
     for (const b of Object.keys(n.markets)) markets[b] = finishRec_(n.markets[b]);
 
+    const leagues = {};
+    for (const g of Object.keys(n.leagues)) leagues[g] = finishRec_(n.leagues[g]);
+
     const weeks = Object.keys(n.weeks).sort().map(function (w) {
       const r = finishRec_(n.weeks[w]);
       r.week = w;
@@ -2719,7 +2730,8 @@ function getStats_(season) {
       return (b.w - a.w) || (a.l - b.l) || a.team.localeCompare(b.team);
     });
 
-    stats[key] = { overall: finishRec_(n.overall), markets: markets, weeks: weeks, teams: teams };
+    stats[key] = { overall: finishRec_(n.overall), markets: markets,
+                   leagues: leagues, weeks: weeks, teams: teams };
   }
 
   return {

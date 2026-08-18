@@ -108,6 +108,7 @@ const STATS = { ok: true, season: "2025-26", players: ["Ann", "Bob"], stats: {
     markets: { moneyline: rec(3, 2, 0, 0.5), spread_fav: rec(4, 3, 1, 0.2),
                spread_dog: rec(3, 3, 0, -0.4), over: rec(2, 1, 0, 0.9),
                under: rec(1, 2, 0, -1.1), spread_pk: rec(0, 0, 0, 0) },
+    leagues: { NFL: rec(7, 4, 0, 1.9), NCAAF: rec(3, 4, 1, -0.7) },
     weeks: [{ week: "2025-09-03", ...rec(3, 2, 0, 0.7) }, { week: "2025-09-10", ...rec(1, 4, 0, -2.1) }],
     teams: [{ team: "Kansas City Chiefs", ...rec(5, 1, 0, 3.2) },
             { team: "Buffalo Bills", ...rec(1, 6, 0, -4.1) }] },
@@ -115,12 +116,14 @@ const STATS = { ok: true, season: "2025-26", players: ["Ann", "Bob"], stats: {
     markets: { moneyline: rec(2, 1, 0, 0.8), spread_fav: rec(2, 1, 0, 0.6),
                spread_dog: rec(1, 1, 0, -0.1), over: rec(1, 0, 0, 0.9),
                under: rec(0, 0, 0, 0), spread_pk: rec(0, 0, 0, 0) },
+    leagues: { NFL: rec(4, 1, 0, 1.6), NCAAF: rec(2, 2, 0, 0.5) },
     weeks: [{ week: "2025-09-03", ...rec(4, 1, 0, 2.6) }],
     teams: [{ team: "Kansas City Chiefs", ...rec(3, 0, 0, 2.7) }] },
   Bob: { overall: rec(4, 5, 1, -0.9),
     markets: { moneyline: rec(1, 1, 0, -0.3), spread_fav: rec(2, 2, 1, -0.4),
                spread_dog: rec(2, 2, 0, -0.2), over: rec(1, 1, 0, 0),
                under: rec(1, 2, 0, -1.1), spread_pk: rec(0, 0, 0, 0) },
+    leagues: { NFL: rec(3, 2, 1, 0.3), NCAAF: rec(1, 3, 0, -1.2) },
     weeks: [{ week: "2025-09-03", ...rec(2, 3, 0, -1.2) }],
     teams: [{ team: "Buffalo Bills", ...rec(1, 6, 0, -4.1) }] }
 } };
@@ -198,7 +201,7 @@ function run3() {
     ok(/Ann/.test(h.get("#qPlayer").innerHTML) && /Bob/.test(h.get("#qPlayer").innerHTML),
        "with every player");
 
-    for (const view of ["markets", "units", "weeks", "cum", "teamsW", "teamsL", "players"]) {
+    for (const view of ["markets", "units", "leagues", "weeks", "cum", "teamsW", "teamsL", "players"]) {
       h.get("#qView").value = view;
       let threw = null;
       try { h.api.renderQuery(); } catch (e) { threw = e; }
@@ -219,6 +222,13 @@ function run3() {
     ok(/zero/.test(chart.innerHTML), "a chart with negatives draws a zero line");
     ok(/bar neg/.test(chart.innerHTML), "and marks the negative bars");
     ok(/-1\.10u/.test(chart.innerHTML), "with signed unit values", (chart.innerHTML.match(/-1\.\d\du/) || [])[0]);
+
+    h.get("#qView").value = "leagues";
+    h.api.renderQuery();
+    ok(/College \(NCAAF\)/.test(chart.innerHTML), "college is spelled out, not left as a code",
+       (chart.innerHTML.match(/College[^<]*/) || [])[0]);
+    ok(chart.innerHTML.indexOf("NFL") < chart.innerHTML.indexOf("College"),
+       "NFL first, as the picks are ordered");
 
     h.get("#qView").value = "teamsW";
     h.api.renderQuery();

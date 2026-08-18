@@ -55,15 +55,26 @@ Why each part matters:
   real URL and the check would report failure on a *successful* build. That bug
   has already been shipped once.
 
-### 1.2 One file, no external requests
+### 1.2 One file, no external JavaScript
 
-No CDN scripts, no external stylesheets, no webfonts, no chart libraries.
-Everything inline or as a data URI. A library on a CDN would be the only thing
-on the page capable of failing to load, and the page has to work when the
-backend is the flaky part.
+**Hard rule: no external scripts.** No CDN chart library, no framework, no
+polyfill service. A script that fails to load leaves a broken page, and the page
+has to keep working when something else is the flaky part. Everything inline or
+as a data URI.
+
+**External CSS: avoid.** A stylesheet that fails to load costs you every rule in
+it, which is nearly as bad.
+
+**Webfonts: allowed, but weigh it.** A font that fails to load falls back and
+nobody notices, so this is a soft failure rather than a hard one - Google Fonts
+will work here, since this is Netlify and not a CSP-sandboxed page. But it is
+still a render-blocking request on a phone on cellular, which is the case this
+build is optimising for. A system stack (`-apple-system, Segoe UI, Helvetica`
+plus `ui-monospace, Menlo, Consolas`) is visually near-identical at UI sizes and
+costs nothing. Prefer it unless the typeface is doing real work.
 
 Images already in the folder (e.g. `trophy-gold-transparent-background-19.webp`)
-are fine — they ship alongside.
+are fine - they ship alongside.
 
 ### 1.3 Single `<script>` block
 
@@ -196,6 +207,8 @@ Everything the Queries tab draws.
 
 - `__all__` is the league combined; the rest are keyed by player name.
 - `weeks` is oldest first. `teams` is sorted by wins descending.
+- `leagues` is keyed by `NFL` / `NCAAF`, uppercased. Two different sports to
+  handicap, so worth separating.
 - `teams` covers **spread and moneyline picks only** — a total's selection is
   the word "Over" or "Under", which is not a team anyone picked.
 - `units` is profit on one unit staked, at the real price. Unpriced picks are
@@ -288,7 +301,7 @@ Game market buttons carry class `chip`, and `chip selected` when chosen.
 `qPlayer` (select), `qView` (select), `qSummary`, `qChart`, `qNote`
 
 `qView` option values, which the render code switches on:
-`markets`, `units`, `weeks`, `cum`, `teamsW`, `teamsL`, `players`
+`markets`, `units`, `leagues`, `weeks`, `cum`, `teamsW`, `teamsL`, `players`
 
 ---
 

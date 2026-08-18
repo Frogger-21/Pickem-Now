@@ -206,6 +206,7 @@
         <select id="qView">
           <option value="markets">Win rate by market</option>
           <option value="units">Units won by market</option>
+          <option value="leagues">NFL vs college</option>
           <option value="weeks">Record by week</option>
           <option value="cum">Cumulative wins over the season</option>
           <option value="teamsW">Most successful teams picked</option>
@@ -449,6 +450,20 @@ function renderQuery() {
     rows = marketRows(r => r.units, r => unitText(r.units) + '  ' + recText(r), null);
     tail = 'Profit on one unit staked per pick, at the real price. Unpriced '
          + 'picks are treated as -110.';
+
+  } else if (view === 'leagues') {
+    const order = ['NFL', 'NCAAF'];
+    const names = Object.keys(node.leagues || {})
+      .sort((a, b) => (order.indexOf(a) + 9) - (order.indexOf(b) + 9) || a.localeCompare(b));
+    rows = names.filter(g => node.leagues[g].n > 0).map(g => {
+      const r = node.leagues[g];
+      return { label: g === 'NCAAF' ? 'College (NCAAF)' : g,
+               value: (r.w + r.l) ? r.w / (r.w + r.l) : 0,
+               note: recText(r) + '  ' + pctText(r) + '  ' + unitText(r.units),
+               cls: 'win' };
+    });
+    tail = 'Two different sports to handicap, so worth separating. Break-even '
+         + 'against a -110 line is .524 in both.';
 
   } else if (view === 'weeks') {
     node.weeks.forEach(w => {

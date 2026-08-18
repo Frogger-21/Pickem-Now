@@ -511,5 +511,26 @@ section("stats: teams come from spreads and moneylines only");
   ok(names.indexOf("Buffalo Bills") === 1, "and the loser is there too", names.join());
 }
 
+
+section("stats split NFL from college");
+{
+  const mk = (id, league, status) =>
+    [id, "2025-09-03", "a@x.com", "Ann", league, "g" + id, "A @ B",
+     "moneyline", "ml", "KC", "", "{}", status, ""];
+  const { api } = harness({ Picks: [PICK_HEADERS,
+    mk("n1", "NFL", "win"), mk("n2", "NFL", "win"), mk("n3", "NFL", "loss"),
+    mk("c1", "NCAAF", "loss"), mk("c2", "NCAAF", "loss"), mk("c3", "ncaaf", "win")
+  ], Results: [] }, SCORES);
+  const lg = api.getStats_().stats["Ann"].leagues;
+
+  ok(lg.NFL.w === 2 && lg.NFL.l === 1, "NFL counted", JSON.stringify(lg.NFL));
+  ok(lg.NCAAF.w === 1 && lg.NCAAF.l === 2, "college counted, case-insensitively",
+     JSON.stringify(lg.NCAAF));
+  ok(Object.keys(lg).length === 2, "and lowercase ncaaf is not a third league",
+     Object.keys(lg).join());
+  ok(lg.NFL.pct > lg.NCAAF.pct, "percentages differ as they should",
+     lg.NFL.pct + " vs " + lg.NCAAF.pct);
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);
