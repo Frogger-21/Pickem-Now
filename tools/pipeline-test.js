@@ -94,7 +94,7 @@ function harness(sheets, scoresByLeague, extraProps, creditsLeft) {
   const names = Object.keys(env);
   const api = new Function(
     ...names,
-    SRC + "return { runAutoGrade_, submitPicks_, getBoard_, getWeek_, getWeeks_, tallies_, seasonRoster_, currentSeason_, notifyWeekResults, notifyPickReminder, previewNotifications, leagueMembers_, notifyAdmin_, warnOnLowCredits_, autoGrade, getSeasons_, getStats_, getMyPicks_, unitPnl_, marketBucket_," +
+    SRC + "return { runAutoGrade_, submitPicks_, getBoard_, getWeek_, getWeeks_, tallies_, seasonRoster_, currentSeason_, notifyWeekResults, notifyPickReminder, previewNotifications, leagueMembers_, notifyAdmin_, warnOnLowCredits_, autoGrade, weekBrief_, askClaude_, recapEnabled_, streakEndingAt_, getSeasons_, getStats_, getMyPicks_, unitPnl_, marketBucket_," +
           " runSelfTest, selfTestPicks_, SELFTEST_WEEK };"
   )(...names.map((n) => env[n]));
 
@@ -1099,6 +1099,144 @@ section("a broken log never breaks a submission");
      week rendering. */
   ok(JSON.stringify(h.api.submissionsForWeek_("2026-09-09")) === "{}",
      "and a log that cannot be read comes back empty rather than throwing");
+}
+
+
+section("the brief counts the outliers so the model does not have to");
+{
+  /* A model asked to find streaks in a table will find one that is not there,
+     and eight people who watched the games notice immediately. */
+  const mk = (id, user, week, status, sel, kind, market, meta) =>
+    [id, week, user.toLowerCase()+"@x.com", user, "NFL", "g"+id, "Bills @ Chiefs",
+     market||"spread", kind||"favorite", sel||"Kansas City Chiefs", -110,
+     JSON.stringify(meta||{line:-3}), status, ""];
+
+  const rows = [PICK_HEADERS];
+  /* The first week is deliberately 2-3: a good enough week to have wins in,
+     but not a good week. A fixture where every week clears the bar cannot tell
+     "four or more" from "at least one", and the streak rule is the whole
+     point. */
+  const hist = ["2025-09-03","2025-09-10","2025-09-17"];
+  hist.forEach((wk, idx) => {
+    const annWins = idx === 0 ? 2 : 4;
+    for (let i=0;i<annWins;i++) rows.push(mk("a"+wk+i,"Ann",wk,"win"));
+    for (let i=annWins;i<5;i++) rows.push(mk("a"+wk+i,"Ann",wk,"loss"));
+    for (let i=0;i<2;i++) rows.push(mk("b"+wk+i,"Bob",wk,"win"));
+    for (let i=0;i<3;i++) rows.push(mk("b"+wk+(i+2),"Bob",wk,"loss"));
+  });
+  const WK = "2025-09-24";
+  for (let i=0;i<5;i++) rows.push(mk("aw"+i,"Ann",WK,"win"));
+  for (let i=0;i<5;i++) rows.push(mk("bw"+i,"Bob",WK,"loss"));
+
+  const { api } = harness({ Picks: rows, Results: [] }, SCORES);
+  const brief = api.weekBrief_(WK);
+
+  ok(brief.outliers.perfect.join() === "Ann", "a 5-0 is named", brief.outliers.perfect.join());
+  ok(brief.outliers.blank.join() === "Bob", "and so is an 0-5", brief.outliers.blank.join());
+
+  const hot = brief.outliers.hotStreaks.filter((h) => h.user === "Ann")[0];
+  /* Three: this week plus the two 4-1s. The opening 2-3 breaks it, which is
+     the assertion that separates a real rule from "has been playing". */
+  ok(hot && hot.weeks === 3, "the run stops at the week that was not a good one",
+     hot && hot.weeks);
+  ok(!brief.outliers.hotStreaks.some((h) => h.user === "Bob"),
+     "and somebody losing is not credited with one");
+
+  const ann = brief.players.filter((p) => p.user === "Ann")[0];
+  ok(ann.week === "5-0", "each player's week is stated", ann.week);
+  ok(ann.seasonRecord === "15-5", "against their season", ann.seasonRecord);
+  ok(brief.standings.length > 0, "and the standings ride along");
+}
+
+section("the brief spots what everybody did, and what only one did");
+{
+  const mk = (id, user, gameId, sel, status) =>
+    [id, "2025-10-01", user.toLowerCase()+"@x.com", user, "NFL", gameId, "Bills @ Chiefs",
+     "spread", "favorite", sel, -110, JSON.stringify({line:-3}), status, ""];
+  const rows = [PICK_HEADERS,
+    // all three took the Chiefs, and it lost
+    mk("a1","Ann","g1","Kansas City Chiefs","loss"),
+    mk("b1","Bob","g1","Kansas City Chiefs","loss"),
+    mk("c1","Cid","g1","Kansas City Chiefs","loss"),
+    // only Cid took the Bills elsewhere, and it won
+    mk("c2","Cid","g2","Buffalo Bills","win"),
+    mk("a2","Ann","g3","New York Jets","loss"),
+    mk("b2","Bob","g4","Miami Dolphins","loss")
+  ];
+  const { api } = harness({ Picks: rows, Results: [] }, SCORES);
+  const o = api.weekBrief_("2025-10-01").outliers;
+
+  ok(o.unanimous.length === 1, "the pick everybody made is found", o.unanimous.length);
+  ok(/Kansas City Chiefs/.test(o.unanimous[0].pick), "named", o.unanimous[0].pick);
+  ok(o.unanimous[0].result === "loss", "with how it went", o.unanimous[0].result);
+  ok(o.loneWinners.some((l) => l.user === "Cid"), "and the one who went alone and won",
+     JSON.stringify(o.loneWinners));
+}
+
+section("the biggest number of the week is the real one");
+{
+  const mk = (id, user, line, status) =>
+    [id, "2025-10-08", user.toLowerCase()+"@x.com", user, "NCAAF", "g"+id, "SJSU @ USC",
+     "spread", line < 0 ? "favorite" : "underdog", "San Jose State Spartans", -110,
+     JSON.stringify({ line: line }), status, ""];
+  /* The biggest number is a 45-point favourite, which is negative. A fixture
+     whose largest line is positive cannot tell absolute size from signed. */
+  const rows = [PICK_HEADERS, mk("a","Ann",-45,"win"), mk("b","Bob",38.5,"win"),
+                              mk("c","Cid",-7.5,"loss")];
+  const { api } = harness({ Picks: rows, Results: [] }, SCORES);
+  const big = api.weekBrief_("2025-10-08").outliers.biggestSpread;
+  ok(big.line === 45, "the largest spread by size, laid or taken", big.line);
+  ok(big.user === "Ann", "and who had it", big.user);
+  ok(big.result === "win", "and whether it came in", big.result);
+}
+
+section("generation never becomes a single point of failure");
+{
+  const mk = (id, user, week, status) =>
+    [id, week, user.toLowerCase()+"@x.com", user, "NFL", "g"+id, "Bills @ Chiefs",
+     "moneyline", "ml", "Kansas City Chiefs", -110, "{}", status, ""];
+  const rows = [PICK_HEADERS];
+  for (const u of ["Ann","Bob"]) for (let i=0;i<5;i++) rows.push(mk(u+i,u,"2025-09-03","win"));
+
+  /* RECAP off: the plain email, and no API call at all. */
+  const off = harness({ Picks: rows, Results: [] }, SCORES, { NOTIFY: "on" });
+  const r1 = off.api.notifyWeekResults();
+  ok(/\(plain\)/.test(r1), "with generation off it says which it sent", r1);
+  ok(off.sent.length === 2, "and everybody still hears", off.sent.length);
+  ok(off.calls.filter((u) => /anthropic/.test(u)).length === 0, "no API call made");
+
+  /* RECAP on but the key missing: still the plain email, still delivered. */
+  const noKey = harness({ Picks: rows, Results: [] }, SCORES, { NOTIFY: "on", RECAP: "on" });
+  const r2 = noKey.api.notifyWeekResults();
+  ok(/\(plain\)/.test(r2), "no key means the plain email, not no email", r2);
+  ok(noKey.sent.length === 2, "which still arrives", noKey.sent.length);
+  /* Counting the sends is not enough - an email with a null body is still an
+     email. The template has to actually be in it. */
+  ok(/Season so far/.test(noKey.sent[0].body || ""),
+     "carrying the plain template, not an empty body",
+     String(noKey.sent[0].body).slice(0, 40));
+  ok(/is final/.test(off.sent[0].body || ""), "and the same with generation off",
+     String(off.sent[0].body).slice(0, 40));
+
+  /* The case that actually exercises the fallback: generation switched on, a
+     key present, and the call coming back with nothing usable. Both cases
+     above skip the branch entirely because recapEnabled_ is false, so neither
+     can tell a working fallback from a missing one. */
+  const broken = harness({ Picks: rows, Results: [] }, SCORES,
+                          { NOTIFY: "on", RECAP: "on", ANTHROPIC_API_KEY: "sk-test" });
+  ok(broken.api.recapEnabled_() === true, "generation is genuinely on here");
+  ok(broken.api.askClaude_({ week: "x" }) === null,
+     "and the call yields nothing usable", broken.api.askClaude_({ week: "x" }));
+
+  const r3 = broken.api.notifyWeekResults();
+  ok(/\(plain\)/.test(r3), "so it falls back rather than sending nothing", r3);
+  ok(broken.sent.filter((m) => /takes it/.test(m.subject)).length === 2,
+     "the week email still goes to everybody",
+     broken.sent.filter((m) => /takes it/.test(m.subject)).length);
+  const weekMail = broken.sent.filter((m) => /takes it/.test(m.subject))[0];
+  ok(/Season so far/.test(weekMail.body || ""),
+     "with the template in it, not an empty body",
+     String(weekMail.body).slice(0, 40));
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

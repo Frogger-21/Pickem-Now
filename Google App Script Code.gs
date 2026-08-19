@@ -752,7 +752,8 @@ function capabilities_() {
     kickofflock: typeof checkKickoffLock_ === 'function',
     notify:      typeof notifyWeekOpen     === 'function',
     weekpicks:   typeof getWeekPicks_      === 'function',
-    audit:       typeof readSubmissions_   === 'function'
+    audit:       typeof readSubmissions_   === 'function',
+    recap:       typeof weekBrief_         === 'function'
   };
   return Object.keys(has).filter(function (k) { return has[k]; });
 }
@@ -3261,13 +3262,22 @@ function notifyWeekResults() {
     + 'Season so far, by total wins:\n' + table.join('\n') + '\n\n'
     + 'https://quinton4mvp.com/';
 
+  /* Prefer the written version, but never depend on it. A Monday email that
+     does not arrive because a language model was unavailable is worse than a
+     plain one that does. */
+  let text = body, wrote = false;
+  if (recapEnabled_()) {
+    const gen = askClaude_(weekBrief_(done.week));
+    if (gen) { text = gen; wrote = true; }
+  }
+
   let n = 0;
   for (const m of leagueMembers_()) {
     if (sendMail_(m.email, 'Week of ' + done.week + ': '
-        + ((done.winners || []).join(' and ') || 'nobody') + ' takes it', body)) n++;
+        + ((done.winners || []).join(' and ') || 'nobody') + ' takes it', text)) n++;
   }
   markSent_('results', done.week);
-  return 'results sent to ' + n;
+  return 'results sent to ' + n + (wrote ? ' (written)' : ' (plain)');
 }
 
 // ---------------------------------------------------------------- controls
@@ -3489,4 +3499,275 @@ function submissionsForWeek_(week) {
     out[u].lastAt  = out[u].last  ? new Date(out[u].last).toISOString()  : '';
   }
   return out;
+}
+
+// ===== WEEKLY RECAP ==========================================================
+// The Monday email, written by Claude from a brief this file assembles.
+//
+// Everything worth a joke is computed here, not left for the model to spot. A
+// language model asked to find streaks in a table will find one that is not
+// there, and eight people who watched the games will notice immediately. So
+// the brief states the facts and the model's only job is to say them well.
+//
+// The generated version is never load-bearing: if the API is slow, down, or
+// returns something odd, the deterministic email sends instead. The Monday
+// result has to arrive whether or not a language model cooperated.
+//
+//   previewRecap()   builds the brief, generates the email, sends nothing
+//   RECAP = on       turns generation on; off, the plain template is used
+
+const RECAP_KEY   = 'RECAP';
+const ANTHROPIC_KEY = 'ANTHROPIC_API_KEY';
+const RECAP_MODEL = 'claude-opus-5';
+const HOT_WEEK    = 4;   // wins in a week that count as a good one
+
+function recapEnabled_() {
+  return String(props_().getProperty(RECAP_KEY) || '').trim().toLowerCase() === 'on'
+      && !!props_().getProperty(ANTHROPIC_KEY);
+}
+
+/** Consecutive weeks up to and including `week` with at least HOT_WEEK wins. */
+function streakEndingAt_(weeks, week) {
+  const idx = weeks.map(function (w) { return w.week; }).indexOf(week);
+  if (idx < 0) return 0;
+  let n = 0;
+  for (let i = idx; i >= 0; i--) {
+    if (weeks[i].w >= HOT_WEEK) n++;
+    else break;
+  }
+  return n;
+}
+
+/**
+ * Everything the email is allowed to say, as data.
+ *
+ * Deliberately small: eight players, five picks each. Anything the model
+ * cannot read here it must not claim.
+ */
+function weekBrief_(week) {
+  const wk = String(week);
+  const detail = getWeek_(wk);
+  const board  = getBoard_();
+  const season = seasonOfPick_({ week: wk }) || currentSeason_();
+  const stats  = getStats_(season);
+
+  const picks = readPicks_().filter(function (p) {
+    return p.week === wk && p.week !== SELFTEST_WEEK;
+  });
+  const results = readResults_();
+
+  // ---- per player, this week against their own season
+  const players = detail.rows.filter(function (r) { return r.picks; }).map(function (r) {
+    const node = (stats.stats || {})[r.user];
+    const overall = node ? node.overall : null;
+    const weeks = node ? (node.weeks || []) : [];
+    const decided = r.wins + r.losses;
+    return {
+      user: r.user,
+      week: r.wins + '-' + r.losses + (r.pushes ? '-' + r.pushes : ''),
+      weekPct: decided ? Math.round((r.wins / decided) * 100) / 100 : null,
+      seasonPct: overall ? overall.pct : null,
+      seasonRecord: overall ? overall.w + '-' + overall.l : '',
+      streakWeeks: streakEndingAt_(weeks, wk),
+      winner: !!r.winner
+    };
+  });
+
+  // ---- the things worth a joke, counted rather than guessed at
+  const perfect = detail.rows.filter(function (r) { return r.picks && r.losses === 0 && r.wins >= 5; })
+    .map(function (r) { return r.user; });
+  const blank = detail.rows.filter(function (r) { return r.picks && r.wins === 0; })
+    .map(function (r) { return r.user; });
+  const hot = players.filter(function (p) { return p.streakWeeks >= 2; })
+    .map(function (p) { return { user: p.user, weeks: p.streakWeeks }; });
+
+  // A pick everybody made, and how it went.
+  const takenBy = {};
+  for (const p of picks) {
+    const key = [p.gameId, p.market, p.kind, p.selection].join('|');
+    if (!takenBy[key]) takenBy[key] = { key: key, users: [], p: p };
+    takenBy[key].users.push(p.user);
+  }
+  const playerCount = players.length;
+  const unanimous = [], lone = [];
+  for (const k of Object.keys(takenBy)) {
+    const t = takenBy[k], p = t.p;
+    const what = describePick_(p);
+    if (playerCount > 1 && t.users.length === playerCount) {
+      unanimous.push({ pick: what, result: p.status || 'pending' });
+    }
+    if (t.users.length === 1 && p.status === 'win' && playerCount > 2) {
+      lone.push({ user: t.users[0], pick: what });
+    }
+  }
+
+  // Biggest number anybody laid or took, and whether it came in.
+  let biggest = null;
+  for (const p of picks) {
+    if (p.market !== 'spread') continue;
+    const meta = parseMeta_(p.meta) || {};
+    const line = Math.abs(num_(meta.line));
+    if (!isFinite(line)) continue;
+    if (!biggest || line > biggest.line) {
+      biggest = { user: p.user, line: line, pick: describePick_(p), result: p.status || 'pending' };
+    }
+  }
+
+  const games = [];
+  for (const id of Object.keys(results)) {
+    const r = results[id];
+    if (!r.completed) continue;
+    if (!picks.some(function (p) { return p.gameId === id; })) continue;
+    games.push({ game: r.away_team + ' @ ' + r.home_team,
+                 score: r.awayScore + '-' + r.homeScore });
+  }
+
+  return {
+    week: wk,
+    winners: detail.winners,
+    players: players,
+    standings: board.slice(0, 10).map(function (b) {
+      return { user: b.user, weeksWon: b.weeksWon, record: b.wins + '-' + b.losses,
+               pct: b.pct };
+    }),
+    outliers: {
+      perfect: perfect, blank: blank, hotStreaks: hot,
+      unanimous: unanimous.slice(0, 4), loneWinners: lone.slice(0, 4),
+      biggestSpread: biggest
+    },
+    games: games.slice(0, 12)
+  };
+}
+
+function describePick_(p) {
+  const meta = parseMeta_(p.meta) || {};
+  if (p.market === 'total') {
+    return (p.kind === 'under' ? 'under ' : 'over ') + meta.total + ' in ' + p.matchup;
+  }
+  if (p.market === 'moneyline') return p.selection + ' moneyline';
+  return p.selection + ' ' + (num_(meta.line) > 0 ? '+' : '') + meta.line;
+}
+
+function recapSystemPrompt_() {
+  return [
+    'You write the Monday email for a private eight-person American football',
+    'pick\'em league. Everyone submits five picks a week: two NFL, two college,',
+    'one each of favourite, underdog, over and under, plus a moneyline.',
+    '',
+    'Tone: a friend writing to friends. Dry, a bit sarcastic, happy to needle',
+    'somebody who had a shocking week or a suspiciously good one. Never mean,',
+    'never personal beyond their picks, nothing crude. The joke is always about',
+    'the football or the pick, never about the person.',
+    '',
+    'Mostly you are summarising. Lead with who won and where the season stands.',
+    'Then pick out whatever in the brief is actually interesting - a 5-0, an',
+    '0-5, somebody on a run of good weeks, a pick everybody made that lost, a',
+    'pick only one person made that won, an absurd spread that came in. If',
+    'nothing stands out, say less rather than inventing drama.',
+    '',
+    'HARD RULES:',
+    '- Use only what is in the brief. Every name, number and result comes from',
+    '  it. If it is not there, you do not know it.',
+    '- You have no injury news, no player statistics and no game footage. Never',
+    '  refer to how a game unfolded, who played well, or why something happened.',
+    '  You know final scores and picks. That is all.',
+    '- Do not compute new statistics. Quote what you are given.',
+    '- Under 200 words before the standings table. People read this on a phone.',
+    '',
+    'Format: plain text for an email body. No markdown, no headers, no bullets',
+    'made of asterisks. A short paragraph or two, then a simple standings list,',
+    'then the link on its own line.'
+  ].join('\n');
+}
+
+/**
+ * One call to the API. Returns the body text, or null - and null is a normal
+ * outcome the caller is expected to handle by sending the plain email.
+ */
+function askClaude_(brief) {
+  const key = props_().getProperty(ANTHROPIC_KEY);
+  if (!key) return null;
+
+  const payload = {
+    model: RECAP_MODEL,
+    max_tokens: 2000,
+    system: recapSystemPrompt_(),
+    /* Refusals route to a capable fallback rather than failing the call. A
+       football recap will not trip a classifier, but the cost of asking is
+       nothing and the cost of a silent Monday is an email nobody gets. */
+    fallbacks: 'default',
+    messages: [{
+      role: 'user',
+      content: 'Write this week\'s email. Here is everything you know:\n\n'
+             + JSON.stringify(brief, null, 1)
+    }]
+  };
+
+  try {
+    const res = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
+      method: 'post',
+      contentType: 'application/json',
+      muteHttpExceptions: true,
+      headers: {
+        'x-api-key': key,
+        'anthropic-version': '2023-06-01',
+        'anthropic-beta': 'server-side-fallback-2026-07-01'
+      },
+      payload: JSON.stringify(payload)
+    });
+
+    const code = res.getResponseCode();
+    if (code < 200 || code >= 300) {
+      notifyAdmin_('recap generation failed',
+        'The API returned ' + code + '.\n\n' + res.getContentText().slice(0, 500)
+        + '\n\nThe plain email was sent instead.');
+      return null;
+    }
+
+    const body = JSON.parse(res.getContentText());
+    if (body.stop_reason === 'refusal') {
+      notifyAdmin_('recap refused', 'The model declined to write the recap. '
+        + 'The plain email was sent instead.');
+      return null;
+    }
+
+    const text = (body.content || [])
+      .filter(function (b) { return b.type === 'text'; })
+      .map(function (b) { return b.text; })
+      .join('\n').trim();
+
+    return text || null;
+  } catch (e) {
+    notifyAdmin_('recap generation failed', String(e && e.stack ? e.stack : e)
+      + '\n\nThe plain email was sent instead.');
+    return null;
+  }
+}
+
+/** Read one before trusting it to eight people. Sends nothing. */
+function previewRecap(week) {
+  const weeks = getWeeks_();
+  const target = week || ((weeks.filter(function (w) { return w.decided; })[0] || {}).week);
+  if (!target) return 'No decided week to recap yet.';
+
+  const brief = weekBrief_(target);
+  const out = [];
+  out.push('BRIEF for ' + target);
+  out.push(JSON.stringify(brief, null, 1));
+  out.push('');
+  out.push('RECAP = ' + (recapEnabled_() ? 'on' : 'off - the plain email would be used'));
+
+  if (props_().getProperty(ANTHROPIC_KEY)) {
+    const text = askClaude_(brief);
+    out.push('');
+    out.push(text ? '--- generated ---\n' + text
+                  : '--- generation failed, the plain email would be sent ---');
+  } else {
+    out.push('');
+    out.push('No ANTHROPIC_API_KEY set, so nothing was generated.');
+  }
+
+  const msg = out.join('\n');
+  Logger.log(msg);
+  return msg;
 }
